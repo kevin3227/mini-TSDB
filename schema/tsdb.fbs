@@ -1,0 +1,10 @@
+table TimeSeriesPoint {
+  timestamp: ulong;
+  value: double;
+}
+
+table TimeSeriesSegment {
+  points: [TimeSeriesPoint];
+}
+
+root_type TimeSeriesSegment;

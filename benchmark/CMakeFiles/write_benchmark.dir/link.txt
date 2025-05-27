@@ -1,0 +1,1 @@
+/usr/bin/c++ CMakeFiles/write_benchmark.dir/write_benchmark.cpp.o CMakeFiles/write_benchmark.dir/__/src/tsdb.cpp.o CMakeFiles/write_benchmark.dir/__/src/mmap_file.cpp.o CMakeFiles/write_benchmark.dir/__/src/delta_delta.cpp.o -o write_benchmark 

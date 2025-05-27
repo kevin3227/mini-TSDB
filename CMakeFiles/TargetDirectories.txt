@@ -1,0 +1,8 @@
+/mnt/e/Zk_C/CS/Repo/mini-TSDB/CMakeFiles/edit_cache.dir
+/mnt/e/Zk_C/CS/Repo/mini-TSDB/CMakeFiles/rebuild_cache.dir
+/mnt/e/Zk_C/CS/Repo/mini-TSDB/src/CMakeFiles/main.dir
+/mnt/e/Zk_C/CS/Repo/mini-TSDB/src/CMakeFiles/edit_cache.dir
+/mnt/e/Zk_C/CS/Repo/mini-TSDB/src/CMakeFiles/rebuild_cache.dir
+/mnt/e/Zk_C/CS/Repo/mini-TSDB/test/CMakeFiles/mmap_file_test.dir
+/mnt/e/Zk_C/CS/Repo/mini-TSDB/test/CMakeFiles/edit_cache.dir
+/mnt/e/Zk_C/CS/Repo/mini-TSDB/test/CMakeFiles/rebuild_cache.dir

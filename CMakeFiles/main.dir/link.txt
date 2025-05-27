@@ -1,0 +1,1 @@
+/usr/bin/c++ CMakeFiles/main.dir/src/main.cpp.o CMakeFiles/main.dir/src/tsdb.cpp.o CMakeFiles/main.dir/src/mmap_file.cpp.o CMakeFiles/main.dir/src/delta_delta.cpp.o -o main 
