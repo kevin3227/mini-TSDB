@@ -1,1 +1,1 @@
-/usr/bin/c++ CMakeFiles/delta_delta_test.dir/delta_delta_test.cpp.o CMakeFiles/delta_delta_test.dir/mmap_file_test.cpp.o CMakeFiles/delta_delta_test.dir/__/src/mmap_file.cpp.o -o delta_delta_test  /usr/lib/x86_64-linux-gnu/libgtest_main.a /usr/lib/x86_64-linux-gnu/libgtest.a 
+/usr/bin/c++ CMakeFiles/delta_delta_test.dir/delta_delta_test.cpp.o CMakeFiles/delta_delta_test.dir/__/src/delta_delta.cpp.o -o delta_delta_test 

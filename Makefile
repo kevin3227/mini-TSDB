@@ -145,6 +145,19 @@ mmap_file_test/fast:
 	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/mmap_file_test.dir/build.make test/CMakeFiles/mmap_file_test.dir/build
 .PHONY : mmap_file_test/fast
 
+#=============================================================================
+# Target rules for targets named delta_delta_test
+
+# Build rule for target.
+delta_delta_test: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 delta_delta_test
+.PHONY : delta_delta_test
+
+# fast build rule for target.
+delta_delta_test/fast:
+	$(MAKE) $(MAKESILENT) -f test/CMakeFiles/delta_delta_test.dir/build.make test/CMakeFiles/delta_delta_test.dir/build
+.PHONY : delta_delta_test/fast
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -153,6 +166,7 @@ help:
 	@echo "... depend"
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
+	@echo "... delta_delta_test"
 	@echo "... main"
 	@echo "... mmap_file_test"
 .PHONY : help

@@ -16,6 +16,7 @@ private:
     uint64_t first_timestamp_ = 0;
     int64_t prev_delta_ = 0;
     std::vector<uint8_t> buffer_;
+    bool first_timestamp_set_ = false;
     
     void encodeZigZag(int64_t value, std::vector<uint8_t>& out);
 };

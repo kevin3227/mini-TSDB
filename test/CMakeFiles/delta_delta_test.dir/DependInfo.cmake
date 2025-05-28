@@ -8,9 +8,8 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/mnt/e/Zk_C/CS/Repo/mini-TSDB/src/mmap_file.cpp" "test/CMakeFiles/delta_delta_test.dir/__/src/mmap_file.cpp.o" "gcc" "test/CMakeFiles/delta_delta_test.dir/__/src/mmap_file.cpp.o.d"
+  "/mnt/e/Zk_C/CS/Repo/mini-TSDB/src/delta_delta.cpp" "test/CMakeFiles/delta_delta_test.dir/__/src/delta_delta.cpp.o" "gcc" "test/CMakeFiles/delta_delta_test.dir/__/src/delta_delta.cpp.o.d"
   "/mnt/e/Zk_C/CS/Repo/mini-TSDB/test/delta_delta_test.cpp" "test/CMakeFiles/delta_delta_test.dir/delta_delta_test.cpp.o" "gcc" "test/CMakeFiles/delta_delta_test.dir/delta_delta_test.cpp.o.d"
-  "/mnt/e/Zk_C/CS/Repo/mini-TSDB/test/mmap_file_test.cpp" "test/CMakeFiles/delta_delta_test.dir/mmap_file_test.cpp.o" "gcc" "test/CMakeFiles/delta_delta_test.dir/mmap_file_test.cpp.o.d"
   )
 
 # Targets to which this target links.

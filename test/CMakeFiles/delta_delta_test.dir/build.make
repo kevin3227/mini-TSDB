@@ -86,51 +86,33 @@ test/CMakeFiles/delta_delta_test.dir/delta_delta_test.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/delta_delta_test.dir/delta_delta_test.cpp.s"
 	cd /mnt/e/Zk_C/CS/Repo/mini-TSDB/test && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /mnt/e/Zk_C/CS/Repo/mini-TSDB/test/delta_delta_test.cpp -o CMakeFiles/delta_delta_test.dir/delta_delta_test.cpp.s
 
-test/CMakeFiles/delta_delta_test.dir/mmap_file_test.cpp.o: test/CMakeFiles/delta_delta_test.dir/flags.make
-test/CMakeFiles/delta_delta_test.dir/mmap_file_test.cpp.o: test/mmap_file_test.cpp
-test/CMakeFiles/delta_delta_test.dir/mmap_file_test.cpp.o: test/CMakeFiles/delta_delta_test.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/mnt/e/Zk_C/CS/Repo/mini-TSDB/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object test/CMakeFiles/delta_delta_test.dir/mmap_file_test.cpp.o"
-	cd /mnt/e/Zk_C/CS/Repo/mini-TSDB/test && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT test/CMakeFiles/delta_delta_test.dir/mmap_file_test.cpp.o -MF CMakeFiles/delta_delta_test.dir/mmap_file_test.cpp.o.d -o CMakeFiles/delta_delta_test.dir/mmap_file_test.cpp.o -c /mnt/e/Zk_C/CS/Repo/mini-TSDB/test/mmap_file_test.cpp
+test/CMakeFiles/delta_delta_test.dir/__/src/delta_delta.cpp.o: test/CMakeFiles/delta_delta_test.dir/flags.make
+test/CMakeFiles/delta_delta_test.dir/__/src/delta_delta.cpp.o: src/delta_delta.cpp
+test/CMakeFiles/delta_delta_test.dir/__/src/delta_delta.cpp.o: test/CMakeFiles/delta_delta_test.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/mnt/e/Zk_C/CS/Repo/mini-TSDB/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object test/CMakeFiles/delta_delta_test.dir/__/src/delta_delta.cpp.o"
+	cd /mnt/e/Zk_C/CS/Repo/mini-TSDB/test && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT test/CMakeFiles/delta_delta_test.dir/__/src/delta_delta.cpp.o -MF CMakeFiles/delta_delta_test.dir/__/src/delta_delta.cpp.o.d -o CMakeFiles/delta_delta_test.dir/__/src/delta_delta.cpp.o -c /mnt/e/Zk_C/CS/Repo/mini-TSDB/src/delta_delta.cpp
 
-test/CMakeFiles/delta_delta_test.dir/mmap_file_test.cpp.i: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/delta_delta_test.dir/mmap_file_test.cpp.i"
-	cd /mnt/e/Zk_C/CS/Repo/mini-TSDB/test && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /mnt/e/Zk_C/CS/Repo/mini-TSDB/test/mmap_file_test.cpp > CMakeFiles/delta_delta_test.dir/mmap_file_test.cpp.i
+test/CMakeFiles/delta_delta_test.dir/__/src/delta_delta.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/delta_delta_test.dir/__/src/delta_delta.cpp.i"
+	cd /mnt/e/Zk_C/CS/Repo/mini-TSDB/test && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /mnt/e/Zk_C/CS/Repo/mini-TSDB/src/delta_delta.cpp > CMakeFiles/delta_delta_test.dir/__/src/delta_delta.cpp.i
 
-test/CMakeFiles/delta_delta_test.dir/mmap_file_test.cpp.s: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/delta_delta_test.dir/mmap_file_test.cpp.s"
-	cd /mnt/e/Zk_C/CS/Repo/mini-TSDB/test && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /mnt/e/Zk_C/CS/Repo/mini-TSDB/test/mmap_file_test.cpp -o CMakeFiles/delta_delta_test.dir/mmap_file_test.cpp.s
-
-test/CMakeFiles/delta_delta_test.dir/__/src/mmap_file.cpp.o: test/CMakeFiles/delta_delta_test.dir/flags.make
-test/CMakeFiles/delta_delta_test.dir/__/src/mmap_file.cpp.o: src/mmap_file.cpp
-test/CMakeFiles/delta_delta_test.dir/__/src/mmap_file.cpp.o: test/CMakeFiles/delta_delta_test.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/mnt/e/Zk_C/CS/Repo/mini-TSDB/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object test/CMakeFiles/delta_delta_test.dir/__/src/mmap_file.cpp.o"
-	cd /mnt/e/Zk_C/CS/Repo/mini-TSDB/test && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT test/CMakeFiles/delta_delta_test.dir/__/src/mmap_file.cpp.o -MF CMakeFiles/delta_delta_test.dir/__/src/mmap_file.cpp.o.d -o CMakeFiles/delta_delta_test.dir/__/src/mmap_file.cpp.o -c /mnt/e/Zk_C/CS/Repo/mini-TSDB/src/mmap_file.cpp
-
-test/CMakeFiles/delta_delta_test.dir/__/src/mmap_file.cpp.i: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/delta_delta_test.dir/__/src/mmap_file.cpp.i"
-	cd /mnt/e/Zk_C/CS/Repo/mini-TSDB/test && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /mnt/e/Zk_C/CS/Repo/mini-TSDB/src/mmap_file.cpp > CMakeFiles/delta_delta_test.dir/__/src/mmap_file.cpp.i
-
-test/CMakeFiles/delta_delta_test.dir/__/src/mmap_file.cpp.s: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/delta_delta_test.dir/__/src/mmap_file.cpp.s"
-	cd /mnt/e/Zk_C/CS/Repo/mini-TSDB/test && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /mnt/e/Zk_C/CS/Repo/mini-TSDB/src/mmap_file.cpp -o CMakeFiles/delta_delta_test.dir/__/src/mmap_file.cpp.s
+test/CMakeFiles/delta_delta_test.dir/__/src/delta_delta.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/delta_delta_test.dir/__/src/delta_delta.cpp.s"
+	cd /mnt/e/Zk_C/CS/Repo/mini-TSDB/test && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /mnt/e/Zk_C/CS/Repo/mini-TSDB/src/delta_delta.cpp -o CMakeFiles/delta_delta_test.dir/__/src/delta_delta.cpp.s
 
 # Object files for target delta_delta_test
 delta_delta_test_OBJECTS = \
 "CMakeFiles/delta_delta_test.dir/delta_delta_test.cpp.o" \
-"CMakeFiles/delta_delta_test.dir/mmap_file_test.cpp.o" \
-"CMakeFiles/delta_delta_test.dir/__/src/mmap_file.cpp.o"
+"CMakeFiles/delta_delta_test.dir/__/src/delta_delta.cpp.o"
 
 # External object files for target delta_delta_test
 delta_delta_test_EXTERNAL_OBJECTS =
 
 test/delta_delta_test: test/CMakeFiles/delta_delta_test.dir/delta_delta_test.cpp.o
-test/delta_delta_test: test/CMakeFiles/delta_delta_test.dir/mmap_file_test.cpp.o
-test/delta_delta_test: test/CMakeFiles/delta_delta_test.dir/__/src/mmap_file.cpp.o
+test/delta_delta_test: test/CMakeFiles/delta_delta_test.dir/__/src/delta_delta.cpp.o
 test/delta_delta_test: test/CMakeFiles/delta_delta_test.dir/build.make
-test/delta_delta_test: /usr/lib/x86_64-linux-gnu/libgtest_main.a
-test/delta_delta_test: /usr/lib/x86_64-linux-gnu/libgtest.a
 test/delta_delta_test: test/CMakeFiles/delta_delta_test.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/mnt/e/Zk_C/CS/Repo/mini-TSDB/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Linking CXX executable delta_delta_test"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/mnt/e/Zk_C/CS/Repo/mini-TSDB/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Linking CXX executable delta_delta_test"
 	cd /mnt/e/Zk_C/CS/Repo/mini-TSDB/test && $(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/delta_delta_test.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.

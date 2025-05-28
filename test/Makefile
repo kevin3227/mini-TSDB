@@ -133,6 +133,44 @@ mmap_file_test/fast:
 	cd /mnt/e/Zk_C/CS/Repo/mini-TSDB && $(MAKE) $(MAKESILENT) -f test/CMakeFiles/mmap_file_test.dir/build.make test/CMakeFiles/mmap_file_test.dir/build
 .PHONY : mmap_file_test/fast
 
+# Convenience name for target.
+test/CMakeFiles/delta_delta_test.dir/rule:
+	cd /mnt/e/Zk_C/CS/Repo/mini-TSDB && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/CMakeFiles/delta_delta_test.dir/rule
+.PHONY : test/CMakeFiles/delta_delta_test.dir/rule
+
+# Convenience name for target.
+delta_delta_test: test/CMakeFiles/delta_delta_test.dir/rule
+.PHONY : delta_delta_test
+
+# fast build rule for target.
+delta_delta_test/fast:
+	cd /mnt/e/Zk_C/CS/Repo/mini-TSDB && $(MAKE) $(MAKESILENT) -f test/CMakeFiles/delta_delta_test.dir/build.make test/CMakeFiles/delta_delta_test.dir/build
+.PHONY : delta_delta_test/fast
+
+__/src/delta_delta.o: __/src/delta_delta.cpp.o
+.PHONY : __/src/delta_delta.o
+
+# target to build an object file
+__/src/delta_delta.cpp.o:
+	cd /mnt/e/Zk_C/CS/Repo/mini-TSDB && $(MAKE) $(MAKESILENT) -f test/CMakeFiles/delta_delta_test.dir/build.make test/CMakeFiles/delta_delta_test.dir/__/src/delta_delta.cpp.o
+.PHONY : __/src/delta_delta.cpp.o
+
+__/src/delta_delta.i: __/src/delta_delta.cpp.i
+.PHONY : __/src/delta_delta.i
+
+# target to preprocess a source file
+__/src/delta_delta.cpp.i:
+	cd /mnt/e/Zk_C/CS/Repo/mini-TSDB && $(MAKE) $(MAKESILENT) -f test/CMakeFiles/delta_delta_test.dir/build.make test/CMakeFiles/delta_delta_test.dir/__/src/delta_delta.cpp.i
+.PHONY : __/src/delta_delta.cpp.i
+
+__/src/delta_delta.s: __/src/delta_delta.cpp.s
+.PHONY : __/src/delta_delta.s
+
+# target to generate assembly for a file
+__/src/delta_delta.cpp.s:
+	cd /mnt/e/Zk_C/CS/Repo/mini-TSDB && $(MAKE) $(MAKESILENT) -f test/CMakeFiles/delta_delta_test.dir/build.make test/CMakeFiles/delta_delta_test.dir/__/src/delta_delta.cpp.s
+.PHONY : __/src/delta_delta.cpp.s
+
 __/src/mmap_file.o: __/src/mmap_file.cpp.o
 .PHONY : __/src/mmap_file.o
 
@@ -156,6 +194,30 @@ __/src/mmap_file.s: __/src/mmap_file.cpp.s
 __/src/mmap_file.cpp.s:
 	cd /mnt/e/Zk_C/CS/Repo/mini-TSDB && $(MAKE) $(MAKESILENT) -f test/CMakeFiles/mmap_file_test.dir/build.make test/CMakeFiles/mmap_file_test.dir/__/src/mmap_file.cpp.s
 .PHONY : __/src/mmap_file.cpp.s
+
+delta_delta_test.o: delta_delta_test.cpp.o
+.PHONY : delta_delta_test.o
+
+# target to build an object file
+delta_delta_test.cpp.o:
+	cd /mnt/e/Zk_C/CS/Repo/mini-TSDB && $(MAKE) $(MAKESILENT) -f test/CMakeFiles/delta_delta_test.dir/build.make test/CMakeFiles/delta_delta_test.dir/delta_delta_test.cpp.o
+.PHONY : delta_delta_test.cpp.o
+
+delta_delta_test.i: delta_delta_test.cpp.i
+.PHONY : delta_delta_test.i
+
+# target to preprocess a source file
+delta_delta_test.cpp.i:
+	cd /mnt/e/Zk_C/CS/Repo/mini-TSDB && $(MAKE) $(MAKESILENT) -f test/CMakeFiles/delta_delta_test.dir/build.make test/CMakeFiles/delta_delta_test.dir/delta_delta_test.cpp.i
+.PHONY : delta_delta_test.cpp.i
+
+delta_delta_test.s: delta_delta_test.cpp.s
+.PHONY : delta_delta_test.s
+
+# target to generate assembly for a file
+delta_delta_test.cpp.s:
+	cd /mnt/e/Zk_C/CS/Repo/mini-TSDB && $(MAKE) $(MAKESILENT) -f test/CMakeFiles/delta_delta_test.dir/build.make test/CMakeFiles/delta_delta_test.dir/delta_delta_test.cpp.s
+.PHONY : delta_delta_test.cpp.s
 
 mmap_file_test.o: mmap_file_test.cpp.o
 .PHONY : mmap_file_test.o
@@ -189,10 +251,17 @@ help:
 	@echo "... depend"
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
+	@echo "... delta_delta_test"
 	@echo "... mmap_file_test"
+	@echo "... __/src/delta_delta.o"
+	@echo "... __/src/delta_delta.i"
+	@echo "... __/src/delta_delta.s"
 	@echo "... __/src/mmap_file.o"
 	@echo "... __/src/mmap_file.i"
 	@echo "... __/src/mmap_file.s"
+	@echo "... delta_delta_test.o"
+	@echo "... delta_delta_test.i"
+	@echo "... delta_delta_test.s"
 	@echo "... mmap_file_test.o"
 	@echo "... mmap_file_test.i"
 	@echo "... mmap_file_test.s"

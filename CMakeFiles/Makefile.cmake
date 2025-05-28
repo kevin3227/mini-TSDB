@@ -70,4 +70,5 @@ set(CMAKE_MAKEFILE_PRODUCTS
 set(CMAKE_DEPEND_INFO_FILES
   "src/CMakeFiles/main.dir/DependInfo.cmake"
   "test/CMakeFiles/mmap_file_test.dir/DependInfo.cmake"
+  "test/CMakeFiles/delta_delta_test.dir/DependInfo.cmake"
   )

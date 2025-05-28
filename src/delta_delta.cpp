@@ -1,10 +1,9 @@
 #include "tsdb/delta_delta.h"
 #include <cassert>
-#include <cstddef>
+#include <iostream>
 
 namespace tsdb {
 
-// DeltaDeltaEncoder 构造函数
 DeltaDeltaEncoder::DeltaDeltaEncoder() {}
 
 // ZigZag 编码：将有符号整数映射到无符号整数以便 Varint 编码
@@ -18,18 +17,24 @@ void DeltaDeltaEncoder::encodeZigZag(int64_t value, std::vector<uint8_t>& out) {
 }
 
 // 添加时间戳进行编码
-void DeltaDeltaEncoder::addTimestamp(uint64_t timestamp) {
-    if (buffer_.empty()) {
+void DeltaDeltaEncoder::addTimestamp(uint64_t timestamp)
+{
+    if (!first_timestamp_set_) {
+        // 第一个时间戳，直接存储
         first_timestamp_ = timestamp;
-        return;
+        prev_delta_ = 0;
+        first_timestamp_set_ = true;
+    } else {
+        int64_t delta = static_cast<int64_t>(timestamp - first_timestamp_);
+        int64_t deltadelta = delta - prev_delta_;
+        encodeZigZag(deltadelta, buffer_);
+        prev_delta_ = delta;
+
+        // std::cout << "Encoded timestamp: " << timestamp 
+        //         << ", Delta: " << delta 
+        //         << ", Delta-Delta: " << deltadelta 
+        //         << std::endl;
     }
-
-    int64_t delta = static_cast<int64_t>(timestamp - first_timestamp_);
-    int64_t deltadelta = delta - prev_delta_;
-
-    encodeZigZag(deltadelta, buffer_);
-
-    prev_delta_ = delta;
 }
 
 // 返回编码后的字节流

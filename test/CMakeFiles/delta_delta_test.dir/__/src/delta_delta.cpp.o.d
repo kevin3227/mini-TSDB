@@ -1,4 +1,4 @@
-src/CMakeFiles/main.dir/delta_delta.cpp.o: \
+test/CMakeFiles/delta_delta_test.dir/__/src/delta_delta.cpp.o: \
  /mnt/e/Zk_C/CS/Repo/mini-TSDB/src/delta_delta.cpp \
  /usr/include/stdc-predef.h \
  /mnt/e/Zk_C/CS/Repo/mini-TSDB/include/tsdb/delta_delta.h \

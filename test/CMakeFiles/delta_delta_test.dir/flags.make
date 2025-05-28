@@ -4,7 +4,7 @@
 # compile CXX with /usr/bin/c++
 CXX_DEFINES = 
 
-CXX_INCLUDES = -I/mnt/e/Zk_C/CS/Repo/mini-TSDB/include -I/mnt/e/Zk_C/CS/Repo/mini-TSDB/test/../include
+CXX_INCLUDES = -I/mnt/e/Zk_C/CS/Repo/mini-TSDB/include
 
-CXX_FLAGS = -DGTEST_HAS_PTHREAD=1
+CXX_FLAGS = 
 
