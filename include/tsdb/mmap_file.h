@@ -33,6 +33,9 @@ public:
     // 获取整个 mmap 映射区域大小
     size_t size() const { return size_; }
 
+    // 扩展 mmap 区域
+    void expand(size_t needed_size);
+
 private:
     std::string path_;
     int fd_ = -1;
@@ -43,9 +46,6 @@ private:
     size_t offset_ = 0;              // 当前有效数据长度
     bool read_only_ = false;
     std::mutex mtx_;
-
-    // 扩展 mmap 区域
-    void expand(size_t needed_size);
 };
 
 } // namespace tsdb
