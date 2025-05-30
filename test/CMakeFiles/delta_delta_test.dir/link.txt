@@ -1,1 +1,0 @@
-/usr/bin/c++ CMakeFiles/delta_delta_test.dir/delta_delta_test.cpp.o CMakeFiles/delta_delta_test.dir/__/src/delta_delta.cpp.o -o delta_delta_test 

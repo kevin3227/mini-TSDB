@@ -1,1 +1,0 @@
-/usr/bin/c++ CMakeFiles/mmap_file_test.dir/mmap_file_test.cpp.o CMakeFiles/mmap_file_test.dir/__/src/mmap_file.cpp.o -o mmap_file_test  /usr/lib/x86_64-linux-gnu/libgtest_main.a /usr/lib/x86_64-linux-gnu/libgtest.a 

@@ -1,8 +1,8 @@
 #pragma once
 
-#include "../../include/tsdb/mmap_file.h"
-#include "../../include/tsdb/delta_delta.h"
-#include "../../include/tsdb/tsdb_types.h"
+#include "tsdb/mmap_file.h"
+#include "tsdb/delta_delta.h"
+#include "tsdb/tsdb_types.h"
 #include <string>
 #include <vector>
 #include <mutex>

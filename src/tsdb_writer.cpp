@@ -1,7 +1,7 @@
-#include "../include/tsdb/tsdb_writer.h"
+#include "tsdb/tsdb_writer.h"
 #include "flatbuffers/flatbuffers.h"
-#include "../include/tsdb/tsdb_generated.h"
-#include "../include/tsdb/mmap_file.h"
+#include "tsdb/tsdb_generated.h"
+#include "tsdb/mmap_file.h"
 #include <iostream>
 
 namespace tsdb {

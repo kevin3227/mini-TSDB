@@ -1,1 +1,0 @@
-/usr/bin/c++ CMakeFiles/writer_test.dir/writer_test.cpp.o CMakeFiles/writer_test.dir/__/src/tsdb_writer.cpp.o -o writer_test 
