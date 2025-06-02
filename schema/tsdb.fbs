@@ -2,9 +2,8 @@ table TimeSeriesPoint {
   timestamp: ulong;
   value: double;
 }
-
-table TimeSeriesSegment {
-  points: [TimeSeriesPoint];
+table CompressedTimeSeriesSegment {
+  metadata: [byte];     // 可选元信息（如第一个时间戳）
+  values: [double];     // 对应的浮点数值数组
 }
-
-root_type TimeSeriesSegment;
+root_type CompressedTimeSeriesSegment;

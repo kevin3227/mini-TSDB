@@ -1,9 +1,59 @@
+cmake_minimum_required(VERSION 3.12)
+project(tsdb_tests)
+
+# 启用测试
 enable_testing()
+
+# 查找测试框架
 find_package(GTest REQUIRED)
 
-add_executable(mmap_file_test mmap_file_test.cpp ../src/mmap_file.cpp)
-add_executable(delta_delta_test delta_delta_test.cpp ../src/delta_delta.cpp)
-add_executable(writer_test writer_test.cpp ../src/tsdb_writer.cpp ../src/mmap_file.cpp ../src/delta_delta.cpp)
-target_link_libraries(mmap_file_test GTest::GTest GTest::Main)
+# 包含父目录的头文件
+include_directories(
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/test
+)
 
-add_test(NAME MMapFileTest COMMAND mmap_file_test)
+# 定义公共测试依赖
+set(TSDB_TEST_LIBS
+    GTest::GTest
+    GTest::Main
+)
+
+# 1. mmap_file 测试
+add_executable(mmap_file_test 
+    mmap_file_test.cpp 
+    ${CMAKE_SOURCE_DIR}/src/mmap_file.cpp
+)
+target_link_libraries(mmap_file_test ${TSDB_TEST_LIBS})
+target_include_directories(mmap_file_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
+add_test(NAME mmap_file_test COMMAND mmap_file_test)
+
+# 2. delta_delta 测试
+add_executable(delta_delta_test 
+    delta_delta_test.cpp 
+    ${CMAKE_SOURCE_DIR}/src/delta_delta.cpp
+)
+target_link_libraries(delta_delta_test ${TSDB_TEST_LIBS})
+target_include_directories(delta_delta_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
+add_test(NAME delta_delta_test COMMAND delta_delta_test)
+
+# 3. tsdb_writer 集成测试
+add_executable(tsdb_writer_test 
+    tsdb_writer_test.cpp 
+    ${CMAKE_SOURCE_DIR}/src/tsdb_writer.cpp
+    ${CMAKE_SOURCE_DIR}/src/mmap_file.cpp
+    ${CMAKE_SOURCE_DIR}/src/delta_delta.cpp
+)
+target_link_libraries(tsdb_writer_test ${TSDB_TEST_LIBS})
+target_include_directories(tsdb_writer_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
+add_test(NAME tsdb_writer_test COMMAND tsdb_writer_test)
+
+# # 4. 可选的性能测试目标（不参与常规测试）
+# add_executable(benchmark_test
+#     benchmark_test.cpp
+#     ${CMAKE_SOURCE_DIR}/src/tsdb_writer.cpp
+#     ${CMAKE_SOURCE_DIR}/src/mmap_file.cpp
+#     ${CMAKE_SOURCE_DIR}/src/delta_delta.cpp
+# )
+# target_link_libraries(benchmark_test ${TSDB_TEST_LIBS})
+# target_include_directories(benchmark_test PRIVATE ${CMAKE_SOURCE_DIR}/include)

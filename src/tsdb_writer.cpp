@@ -1,87 +1,87 @@
 #include "tsdb/tsdb_writer.h"
-#include "flatbuffers/flatbuffers.h"
-#include "tsdb/tsdb_generated.h"
-#include "tsdb/mmap_file.h"
+#include "tsdb/tsdb_generated.h"  // 自动生成的 FlatBuffers 头文件
+#include <flatbuffers/flatbuffers.h>
+#include <stdexcept>
 #include <iostream>
 
 namespace tsdb {
 
-TSDBWriter::TSDBWriter(const std::string& path, 
-                       size_t initial_size,
-                       const WriteOptions& options)
-    : mmap_file_(std::make_unique<MMapFile>(path, initial_size)),
-      options_(options) {}
+TSDBWriter::TSDBWriter(const std::string& path, size_t initial_size, bool compress)
+    : mmap_file_(path, initial_size, /*read_only=*/false), compress_(compress) {}
 
-void TSDBWriter::encode_point(uint64_t timestamp, double value) {
-    // Step 1: 压缩时间戳 (可选)
-    if (options_.enable_delta_encoding) {
-        delta_encoder_.addTimestamp(timestamp);
+bool TSDBWriter::write(uint64_t timestamp, double value) {
+    if (compress_) {
+        writeCompressed(timestamp, value);
+    } else {
+        writeRaw(timestamp, value);
     }
+    return true;
+}
 
-    // Step 2: 构建FlatBuffer
+void TSDBWriter::writeRaw(uint64_t timestamp, double value) {
     flatbuffers::FlatBufferBuilder builder(1024);
+
     auto point = CreateTimeSeriesPoint(builder, timestamp, value);
     builder.Finish(point);
 
-    // Step 3: 写入缓冲区
     const uint8_t* buf = builder.GetBufferPointer();
     size_t size = builder.GetSize();
-    encode_buffer_.insert(encode_buffer_.end(), buf, buf + size);
-    buffered_count_++;
+
+    mmap_file_.append(buf, size);
 }
 
-void TSDBWriter::write_to_mmap(const uint8_t* data, size_t size) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    
-    // 写入前检查剩余空间
-    size_t remaining = mmap_file_->size() - mmap_file_->length();
-    if (remaining < size + sizeof(uint32_t)) { // +4字节存储数据长度
-        mmap_file_->expand(size + sizeof(uint32_t));
+void TSDBWriter::writeCompressed(uint64_t timestamp, double value) {
+    delta_encoder_.addTimestamp(timestamp);
+    values_.push_back(value);
+
+    // 当前仅在 finish() 中统一写入压缩段
+    // 这里可以选择按批处理，例如每 1000 个点写一次
+    static const size_t BATCH_SIZE = 1000;
+    if (values_.size() >= BATCH_SIZE) {
+        flatbuffers::FlatBufferBuilder builder(1024);
+
+        auto encoded = delta_encoder_.finish();
+        // auto dd_vec = builder.CreateVector(encoded.data(), encoded.size());
+        auto dd_vec = builder.CreateVector(reinterpret_cast<const int8_t*>(encoded.data()), encoded.size());
+        auto values_vec = builder.CreateVector(values_);
+
+        auto segment = CreateCompressedTimeSeriesSegment(builder, dd_vec, values_vec);
+        builder.Finish(segment);
+
+        const uint8_t* buf = builder.GetBufferPointer();
+        size_t size = builder.GetSize();
+
+        mmap_file_.append(buf, size);
+
+        // 清空缓存
+        values_.clear();
+        delta_encoder_ = DeltaDeltaEncoder();  // 重置编码器
+    }
+}
+
+void TSDBWriter::close() {
+    // 如果还有剩余未写入的数据，强制 flush
+    if (compress_ && !values_.empty()) {
+        flatbuffers::FlatBufferBuilder builder(1024);
+
+        auto encoded = delta_encoder_.finish();
+        // auto dd_vec = builder.CreateVector(encoded.data(), encoded.size());
+        auto dd_vec = builder.CreateVector(reinterpret_cast<const int8_t*>(encoded.data()), encoded.size());
+        auto values_vec = builder.CreateVector(values_);
+
+        auto segment = CreateCompressedTimeSeriesSegment(builder, dd_vec, values_vec);
+        builder.Finish(segment);
+
+        const uint8_t* buf = builder.GetBufferPointer();
+        size_t size = builder.GetSize();
+
+        mmap_file_.append(buf, size);
+
+        values_.clear();
+        delta_encoder_ = DeltaDeltaEncoder();
     }
 
-    // 先写入数据长度(4字节)
-    uint32_t len = static_cast<uint32_t>(size);
-    mmap_file_->append(&len, sizeof(len));
-    
-    // 写入实际数据
-    mmap_file_->append(data, size);
-}
-
-bool TSDBWriter::write(uint64_t timestamp, double value) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    
-    encode_point(timestamp, value);
-    
-    // 达到batch_size时刷盘
-    if (buffered_count_ >= options_.batch_size) {
-        flush();
-    }
-    return true;
-}
-
-bool TSDBWriter::write_batch(const std::vector<DataPoint>& points) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    
-    for (const auto& [ts, val] : points) {
-        encode_point(ts, val);
-    }
-    
-    if (buffered_count_ >= options_.batch_size) {
-        flush();
-    }
-    return true;
-}
-
-void TSDBWriter::flush() {
-    if (encode_buffer_.empty()) return;
-    
-    write_to_mmap(encode_buffer_.data(), encode_buffer_.size());
-    encode_buffer_.clear();
-    buffered_count_ = 0;
-}
-
-TSDBWriter::~TSDBWriter() {
-    flush(); // 确保析构时数据持久化
+    mmap_file_.~MMapFile();  // 显式关闭
 }
 
 } // namespace tsdb

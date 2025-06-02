@@ -2,41 +2,35 @@
 
 #include "tsdb/mmap_file.h"
 #include "tsdb/delta_delta.h"
-#include "tsdb/tsdb_types.h"
-#include <string>
+
 #include <vector>
-#include <mutex>
-#include <memory>
+#include <string>
+#include <flatbuffers/flatbuffers.h>
 
 namespace tsdb {
 
 class TSDBWriter {
 public:
-    explicit TSDBWriter(const std::string& path, 
-                       size_t initial_size = 1 << 30, // 1GB初始空间
-                       const WriteOptions& options = {});
+    // 构造函数：打开或创建 mmap 文件
+    explicit TSDBWriter(const std::string& path, size_t initial_size = 1 << 30, bool compress = true);
 
-    // 写入单个数据点
+    // 写入一个时间序列点
     bool write(uint64_t timestamp, double value);
 
-    // 批量写入
-    bool write_batch(const std::vector<DataPoint>& points);
-
-    // 显式刷盘
-    void flush();
-
-    ~TSDBWriter();
+    // 关闭并持久化数据
+    void close();
 
 private:
-    void write_to_mmap(const uint8_t* data, size_t size);
-    void encode_point(uint64_t timestamp, double value);
-
-    std::unique_ptr<MMapFile> mmap_file_;
+    MMapFile mmap_file_;          // 封装 mmap 操作
+    bool compress_;               // 是否启用压缩
     DeltaDeltaEncoder delta_encoder_;
-    WriteOptions options_;
-    std::vector<uint8_t> encode_buffer_;
-    std::mutex mutex_;
-    size_t buffered_count_ = 0;
+    std::vector<double> values_;  // 值缓存（用于压缩模式）
+
+    // 辅助函数：非压缩模式写入单个点
+    void writeRaw(uint64_t timestamp, double value);
+
+    // 辅助函数：压缩模式写入时间戳和值
+    void writeCompressed(uint64_t timestamp, double value);
 };
 
 } // namespace tsdb

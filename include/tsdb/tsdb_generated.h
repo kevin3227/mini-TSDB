@@ -16,8 +16,8 @@ static_assert(FLATBUFFERS_VERSION_MAJOR == 25 &&
 struct TimeSeriesPoint;
 struct TimeSeriesPointBuilder;
 
-struct TimeSeriesSegment;
-struct TimeSeriesSegmentBuilder;
+struct CompressedTimeSeriesSegment;
+struct CompressedTimeSeriesSegmentBuilder;
 
 struct TimeSeriesPoint FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   typedef TimeSeriesPointBuilder Builder;
@@ -70,85 +70,98 @@ inline ::flatbuffers::Offset<TimeSeriesPoint> CreateTimeSeriesPoint(
   return builder_.Finish();
 }
 
-struct TimeSeriesSegment FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
-  typedef TimeSeriesSegmentBuilder Builder;
+struct CompressedTimeSeriesSegment FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef CompressedTimeSeriesSegmentBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
-    VT_POINTS = 4
+    VT_METADATA = 4,
+    VT_VALUES = 6
   };
-  const ::flatbuffers::Vector<::flatbuffers::Offset<TimeSeriesPoint>> *points() const {
-    return GetPointer<const ::flatbuffers::Vector<::flatbuffers::Offset<TimeSeriesPoint>> *>(VT_POINTS);
+  const ::flatbuffers::Vector<int8_t> *metadata() const {
+    return GetPointer<const ::flatbuffers::Vector<int8_t> *>(VT_METADATA);
+  }
+  const ::flatbuffers::Vector<double> *values() const {
+    return GetPointer<const ::flatbuffers::Vector<double> *>(VT_VALUES);
   }
   bool Verify(::flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
-           VerifyOffset(verifier, VT_POINTS) &&
-           verifier.VerifyVector(points()) &&
-           verifier.VerifyVectorOfTables(points()) &&
+           VerifyOffset(verifier, VT_METADATA) &&
+           verifier.VerifyVector(metadata()) &&
+           VerifyOffset(verifier, VT_VALUES) &&
+           verifier.VerifyVector(values()) &&
            verifier.EndTable();
   }
 };
 
-struct TimeSeriesSegmentBuilder {
-  typedef TimeSeriesSegment Table;
+struct CompressedTimeSeriesSegmentBuilder {
+  typedef CompressedTimeSeriesSegment Table;
   ::flatbuffers::FlatBufferBuilder &fbb_;
   ::flatbuffers::uoffset_t start_;
-  void add_points(::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<TimeSeriesPoint>>> points) {
-    fbb_.AddOffset(TimeSeriesSegment::VT_POINTS, points);
+  void add_metadata(::flatbuffers::Offset<::flatbuffers::Vector<int8_t>> metadata) {
+    fbb_.AddOffset(CompressedTimeSeriesSegment::VT_METADATA, metadata);
   }
-  explicit TimeSeriesSegmentBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+  void add_values(::flatbuffers::Offset<::flatbuffers::Vector<double>> values) {
+    fbb_.AddOffset(CompressedTimeSeriesSegment::VT_VALUES, values);
+  }
+  explicit CompressedTimeSeriesSegmentBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
   }
-  ::flatbuffers::Offset<TimeSeriesSegment> Finish() {
+  ::flatbuffers::Offset<CompressedTimeSeriesSegment> Finish() {
     const auto end = fbb_.EndTable(start_);
-    auto o = ::flatbuffers::Offset<TimeSeriesSegment>(end);
+    auto o = ::flatbuffers::Offset<CompressedTimeSeriesSegment>(end);
     return o;
   }
 };
 
-inline ::flatbuffers::Offset<TimeSeriesSegment> CreateTimeSeriesSegment(
+inline ::flatbuffers::Offset<CompressedTimeSeriesSegment> CreateCompressedTimeSeriesSegment(
     ::flatbuffers::FlatBufferBuilder &_fbb,
-    ::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<TimeSeriesPoint>>> points = 0) {
-  TimeSeriesSegmentBuilder builder_(_fbb);
-  builder_.add_points(points);
+    ::flatbuffers::Offset<::flatbuffers::Vector<int8_t>> metadata = 0,
+    ::flatbuffers::Offset<::flatbuffers::Vector<double>> values = 0) {
+  CompressedTimeSeriesSegmentBuilder builder_(_fbb);
+  builder_.add_values(values);
+  builder_.add_metadata(metadata);
   return builder_.Finish();
 }
 
-inline ::flatbuffers::Offset<TimeSeriesSegment> CreateTimeSeriesSegmentDirect(
+inline ::flatbuffers::Offset<CompressedTimeSeriesSegment> CreateCompressedTimeSeriesSegmentDirect(
     ::flatbuffers::FlatBufferBuilder &_fbb,
-    const std::vector<::flatbuffers::Offset<TimeSeriesPoint>> *points = nullptr) {
-  auto points__ = points ? _fbb.CreateVector<::flatbuffers::Offset<TimeSeriesPoint>>(*points) : 0;
-  return CreateTimeSeriesSegment(
+    const std::vector<int8_t> *metadata = nullptr,
+    const std::vector<double> *values = nullptr) {
+  auto metadata__ = metadata ? _fbb.CreateVector<int8_t>(*metadata) : 0;
+  auto values__ = values ? _fbb.CreateVector<double>(*values) : 0;
+  return CreateCompressedTimeSeriesSegment(
       _fbb,
-      points__);
+      metadata__,
+      values__);
 }
 
-inline const TimeSeriesSegment *GetTimeSeriesSegment(const void *buf) {
-  return ::flatbuffers::GetRoot<TimeSeriesSegment>(buf);
+inline const CompressedTimeSeriesSegment *GetCompressedTimeSeriesSegment(const void *buf) {
+  return ::flatbuffers::GetRoot<CompressedTimeSeriesSegment>(buf);
 }
 
-inline const TimeSeriesSegment *GetSizePrefixedTimeSeriesSegment(const void *buf) {
-  return ::flatbuffers::GetSizePrefixedRoot<TimeSeriesSegment>(buf);
+inline const CompressedTimeSeriesSegment *GetSizePrefixedCompressedTimeSeriesSegment(const void *buf) {
+  return ::flatbuffers::GetSizePrefixedRoot<CompressedTimeSeriesSegment>(buf);
 }
 
-inline bool VerifyTimeSeriesSegmentBuffer(
+inline bool VerifyCompressedTimeSeriesSegmentBuffer(
     ::flatbuffers::Verifier &verifier) {
-  return verifier.VerifyBuffer<TimeSeriesSegment>(nullptr);
+  return verifier.VerifyBuffer<CompressedTimeSeriesSegment>(nullptr);
 }
 
-inline bool VerifySizePrefixedTimeSeriesSegmentBuffer(
+inline bool VerifySizePrefixedCompressedTimeSeriesSegmentBuffer(
     ::flatbuffers::Verifier &verifier) {
-  return verifier.VerifySizePrefixedBuffer<TimeSeriesSegment>(nullptr);
+  return verifier.VerifySizePrefixedBuffer<CompressedTimeSeriesSegment>(nullptr);
 }
 
-inline void FinishTimeSeriesSegmentBuffer(
+inline void FinishCompressedTimeSeriesSegmentBuffer(
     ::flatbuffers::FlatBufferBuilder &fbb,
-    ::flatbuffers::Offset<TimeSeriesSegment> root) {
+    ::flatbuffers::Offset<CompressedTimeSeriesSegment> root) {
   fbb.Finish(root);
 }
 
-inline void FinishSizePrefixedTimeSeriesSegmentBuffer(
+inline void FinishSizePrefixedCompressedTimeSeriesSegmentBuffer(
     ::flatbuffers::FlatBufferBuilder &fbb,
-    ::flatbuffers::Offset<TimeSeriesSegment> root) {
+    ::flatbuffers::Offset<CompressedTimeSeriesSegment> root) {
   fbb.FinishSizePrefixed(root);
 }
 
