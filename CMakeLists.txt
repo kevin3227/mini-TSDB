@@ -10,3 +10,6 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 add_subdirectory(src)
 add_subdirectory(test)
 # add_subdirectory(benchmark)
+
+# message(STATUS "CMAKE_BINARY_DIR = ${CMAKE_BINARY_DIR}")
+# message(STATUS "CMAKE_CURRENT_BINARY_DIR = ${CMAKE_CURRENT_BINARY_DIR}")
