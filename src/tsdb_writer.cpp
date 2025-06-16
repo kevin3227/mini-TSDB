@@ -81,8 +81,6 @@ void TSDBWriter::close() {
         values_.clear();
         delta_encoder_ = DeltaDeltaEncoder();
     }
-
-    mmap_file_.~MMapFile();
 }
 
 } // namespace tsdb
