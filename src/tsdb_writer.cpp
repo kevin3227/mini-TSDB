@@ -24,17 +24,30 @@ void TSDBWriter::writeRaw(uint64_t timestamp, double value) {
     auto point = CreateTimeSeriesPoint(builder, timestamp, value);
     builder.Finish(point);
 
+    // 记录当前块的时间戳范围
+    if (min_timestamp_ == 0 || timestamp < min_timestamp_) min_timestamp_ = timestamp;
+    if (timestamp > max_timestamp_) max_timestamp_ = timestamp;
+
     // 写入大小前缀
     uint32_t size = builder.GetSize();
+    uint64_t offset = mmap_file_.length();
     mmap_file_.append(reinterpret_cast<const uint8_t*>(&size), sizeof(size));
     
     // 写入数据
     mmap_file_.append(builder.GetBufferPointer(), size);
+
+    // 写入索引块
+    writeIndexBlock(min_timestamp_, max_timestamp_, offset);
+    min_timestamp_ = max_timestamp_ = 0;  // 重置时间戳范围
 }
 
 void TSDBWriter::writeCompressed(uint64_t timestamp, double value) {
     delta_encoder_.addTimestamp(timestamp);
     values_.push_back(value);
+
+    // 记录当前块的时间戳范围
+    if (min_timestamp_ == 0 || timestamp < min_timestamp_) min_timestamp_ = timestamp;
+    if (timestamp > max_timestamp_) max_timestamp_ = timestamp;
 
     static const size_t BATCH_SIZE = 1000;
     if (values_.size() >= BATCH_SIZE) {
@@ -49,15 +62,34 @@ void TSDBWriter::writeCompressed(uint64_t timestamp, double value) {
 
         // 写入大小前缀
         uint32_t size = builder.GetSize();
+        uint64_t offset = mmap_file_.length();
         mmap_file_.append(reinterpret_cast<const uint8_t*>(&size), sizeof(size));
         
         // 写入数据
         mmap_file_.append(builder.GetBufferPointer(), size);
 
+        // 写入索引块
+        writeIndexBlock(min_timestamp_, max_timestamp_, offset);
+        min_timestamp_ = max_timestamp_ = 0;  // 重置时间戳范围
+
         // 清空缓存
         values_.clear();
         delta_encoder_ = DeltaDeltaEncoder();
     }
+}
+
+void TSDBWriter::writeIndexBlock(uint64_t min_ts, uint64_t max_ts, uint64_t offset) {
+    flatbuffers::FlatBufferBuilder builder(64);
+    
+    auto index = CreateTimeSeriesPoint(builder, min_ts, static_cast<double>(offset));
+    builder.Finish(index);
+
+    // 写入大小前缀
+    uint32_t size = builder.GetSize();
+    mmap_file_.append(reinterpret_cast<const uint8_t*>(&size), sizeof(size));
+    
+    // 写入索引数据
+    mmap_file_.append(builder.GetBufferPointer(), size);
 }
 
 void TSDBWriter::close() {
@@ -73,14 +105,20 @@ void TSDBWriter::close() {
 
         // 写入大小前缀
         uint32_t size = builder.GetSize();
+        uint64_t offset = mmap_file_.length();
         mmap_file_.append(reinterpret_cast<const uint8_t*>(&size), sizeof(size));
         
         // 写入数据
         mmap_file_.append(builder.GetBufferPointer(), size);
+
+        // 写入索引块
+        if (min_timestamp_ != 0 || max_timestamp_ != 0) {
+            writeIndexBlock(min_timestamp_, max_timestamp_, offset);
+        }
 
         values_.clear();
         delta_encoder_ = DeltaDeltaEncoder();
     }
 }
 
-} // namespace tsdb
+}

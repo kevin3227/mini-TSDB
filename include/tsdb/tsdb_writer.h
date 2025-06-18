@@ -25,12 +25,17 @@ private:
     bool compress_;               // 是否启用压缩
     DeltaDeltaEncoder delta_encoder_;
     std::vector<double> values_;  // 值缓存（用于压缩模式）
+    uint64_t min_timestamp_ = 0;  // 当前块最小时间戳
+    uint64_t max_timestamp_ = 0;  // 当前块最大时间戳
 
     // 辅助函数：非压缩模式写入单个点
     void writeRaw(uint64_t timestamp, double value);
 
     // 辅助函数：压缩模式写入时间戳和值
     void writeCompressed(uint64_t timestamp, double value);
+
+    // 写入索引块
+    void writeIndexBlock(uint64_t min_ts, uint64_t max_ts, uint64_t offset);
 };
 
 } // namespace tsdb
