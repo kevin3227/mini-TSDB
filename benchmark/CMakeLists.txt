@@ -17,12 +17,13 @@ include_directories(
 
 # 添加benchmark可执行文件
 add_executable(benchmark 
-    ../benchmark/benchmark.cpp
+    ../benchmark/tsdb_benchmark.cpp
     ../src/tsdb.cpp
     ../src/mmap_file.cpp
     ../src/delta_delta.cpp
     ../src/tsdb_writer.cpp
     ../src/tsdb_reader.cpp
+    ../src/tsdb_index.cpp
 )
 
 # 设置目标属性

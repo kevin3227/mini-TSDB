@@ -46,6 +46,7 @@ add_executable(tsdb_writer_test
     ${CMAKE_SOURCE_DIR}/src/tsdb_writer.cpp
     ${CMAKE_SOURCE_DIR}/src/mmap_file.cpp
     ${CMAKE_SOURCE_DIR}/src/delta_delta.cpp
+    ${CMAKE_SOURCE_DIR}/src/tsdb_index.cpp
 )
 target_link_libraries(tsdb_writer_test ${TSDB_TEST_LIBS})
 target_include_directories(tsdb_writer_test PRIVATE ${CMAKE_SOURCE_DIR}/include)
@@ -57,6 +58,7 @@ add_executable(tsdb_reader_test
     ${CMAKE_SOURCE_DIR}/src/tsdb_reader.cpp
     ${CMAKE_SOURCE_DIR}/src/mmap_file.cpp
     ${CMAKE_SOURCE_DIR}/src/delta_delta.cpp
+    ${CMAKE_SOURCE_DIR}/src/tsdb_index.cpp
     # ${CMAKE_SOURCE_DIR}/generated/tsdb_generated.cpp  # FlatBuffers生成的代码
 )
 target_link_libraries(tsdb_reader_test ${TSDB_TEST_LIBS})
