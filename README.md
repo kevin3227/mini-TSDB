@@ -91,7 +91,7 @@ make
 ### 5. Run Benchmark
 
 ```bash
-./benchmark/write_benchmark
+./benchmark/benchmark
 ```
 
 ---
