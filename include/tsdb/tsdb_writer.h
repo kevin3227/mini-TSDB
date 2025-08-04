@@ -33,9 +33,6 @@ private:
 
     // 辅助函数：压缩模式写入时间戳和值
     void writeCompressed(uint64_t timestamp, double value);
-
-    // 写入索引块
-    void writeIndexBlock(uint64_t min_ts, uint64_t max_ts, uint64_t offset);
 };
 
 } // namespace tsdb

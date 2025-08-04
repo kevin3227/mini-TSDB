@@ -50,17 +50,8 @@ void TSDBReader::loadIndex() {
         bool is_index = false;
         uint64_t min_ts = 0;
         
-        // 检查是否为索引块
         auto point = flatbuffers::GetRoot<TimeSeriesPoint>(block_data);
-        if (point->Verify(verifier)) {
-            uint64_t timestamp = point->timestamp();
-            uint64_t data_offset = static_cast<uint64_t>(point->value());
-            
-            // 这是个索引块
-            time_index_[timestamp] = data_offset;
-            is_index = true;
-            min_ts = timestamp;
-        } else if (VerifyCompressedTimeSeriesSegmentBuffer(verifier)) {
+        if (VerifyCompressedTimeSeriesSegmentBuffer(verifier)) {
             // 这是压缩数据块，尝试提取最小时间戳
             auto segment = GetCompressedTimeSeriesSegment(block_data);
             
@@ -83,14 +74,10 @@ void TSDBReader::loadIndex() {
         BlockInfo info = {
             .min_ts = min_ts,
             .offset = block_offset,
-            .size = block_size,
-            .is_index = is_index
+            .size = block_size
         };
         
-        // 只索引非索引块
-        if (!is_index) {
-            time_blocks_[min_ts] = info;
-        }
+        time_blocks_[min_ts] = info;
         offset_to_block_[block_offset] = info;
     }
     
@@ -144,25 +131,105 @@ void TSDBReader::processBlock(
     }
 }
 
+void TSDBReader::loadIndexLazy(uint64_t start_ts, uint64_t end_ts) {
+    std::lock_guard<std::mutex> lock(index_mutex_);
+    
+    // 检查是否需要加载索引
+    if (index_status_.fully_loaded) {
+        return; // 索引已完全加载
+    }
+    
+    // 检查请求范围是否已在加载范围内
+    if (start_ts >= index_status_.min_loaded_ts && 
+        end_ts <= index_status_.max_loaded_ts && 
+        !time_blocks_.empty()) {
+        return; // 请求范围的索引已加载
+    }
+    
+    // 扩展加载范围，包括前后一定的余量
+    uint64_t load_start = (start_ts > 1000000) ? start_ts - 1000000 : 0;
+    uint64_t load_end = end_ts + 1000000;
+    
+    // 扫描文件，仅加载相关范围的索引
+    const uint8_t* current_pos = data_;
+    while (current_pos < end_) {
+        uint32_t block_size = 0;
+        const uint8_t* block_data = readNextBlock(current_pos, &block_size);
+        if (!block_data) break;
+        
+        uint64_t block_offset = current_pos - data_;
+        current_pos = block_data + block_size;
+        
+        // 如果该块已被索引，跳过
+        if (offset_to_block_.find(block_offset) != offset_to_block_.end()) {
+            continue;
+        }
+        
+        // 验证并解析块内容
+        flatbuffers::Verifier verifier(block_data, block_size);
+        bool is_index = false;
+        uint64_t min_ts = 0;
+        
+        auto point = flatbuffers::GetRoot<TimeSeriesPoint>(block_data);
+        if (VerifyCompressedTimeSeriesSegmentBuffer(verifier)) {
+            // 压缩数据块，提取最小时间戳
+            auto segment = GetCompressedTimeSeriesSegment(block_data);
+            DeltaDeltaDecoder decoder(
+                reinterpret_cast<const uint8_t*>(segment->metadata()->data()),
+                segment->metadata()->size());
+            
+            if (decoder.next(&min_ts)) {
+                // 如果时间戳不在我们关心的范围内，可以跳过
+                if (min_ts > load_end || min_ts < load_start) {
+                    continue;
+                }
+            }
+        } else {
+            // 尝试作为单点处理
+            if (point->Verify(verifier)) {
+                min_ts = point->timestamp();
+                // 如果时间戳不在我们关心的范围内，跳过
+                if (min_ts > load_end || min_ts < load_start) {
+                    continue;
+                }
+            }
+        }
+        
+        // 记录块信息
+        BlockInfo info = {
+            .min_ts = min_ts,
+            .offset = block_offset,
+            .size = block_size
+        };
+    
+        time_blocks_[min_ts] = info;
+        offset_to_block_[block_offset] = info;
+    }
+    
+    // 更新已加载的范围
+    if (load_start < index_status_.min_loaded_ts) 
+        index_status_.min_loaded_ts = load_start;
+    if (load_end > index_status_.max_loaded_ts) 
+        index_status_.max_loaded_ts = load_end;
+    
+    // 检查是否已完整加载所有索引
+    if (index_status_.min_loaded_ts == 0 && 
+        current_pos >= end_) {
+        index_status_.fully_loaded = true;
+    }
+}
+
 std::vector<std::pair<uint64_t, double>> TSDBReader::query(uint64_t start, uint64_t end) {
     std::vector<std::pair<uint64_t, double>> results;
     
-    // 加载索引（线程安全）
-    loadIndex();
+    // 按需加载索引（线程安全）
+    loadIndexLazy(start, end);
     
     // 使用索引查找范围内的数据块
     auto it = time_blocks_.lower_bound(start);
     
-    // 如果没有找到大于等于start的时间戳，从头开始查找第一个块
-    if (it == time_blocks_.end() && !time_blocks_.empty()) {
-        it = time_blocks_.begin();
-    }
-    
-    // 收集需要处理的块
-    std::vector<BlockInfo> blocks_to_process;
-    
-    // 处理数据块
-    while (it != time_blocks_.end()) {
+    // 如果查询范围很小，我们可能直接处理范围内的块
+    while (it != time_blocks_.end() && it->first <= end) {
         const BlockInfo& info = it->second;
         
         // 处理数据块
@@ -178,5 +245,72 @@ std::vector<std::pair<uint64_t, double>> TSDBReader::query(uint64_t start, uint6
     
     return results;
 }
+
+// // 直接全表扫描查询
+// std::vector<std::pair<uint64_t, double>> TSDBReader::query(uint64_t start, uint64_t end) {
+//     std::vector<std::pair<uint64_t, double>> results;
+    
+//     // 直接从文件开头扫描到结尾，不使用索引
+//     const uint8_t* current_pos = data_;
+    
+//     // 全表扫描所有数据块
+//     while (current_pos < end_) {
+//         uint32_t block_size = 0;
+//         const uint8_t* block_data = readNextBlock(current_pos, &block_size);
+//         if (!block_data) break;
+        
+//         // 检查FlatBuffer的数据类型
+//         flatbuffers::Verifier verifier(block_data, block_size);
+        
+//         // 尝试解析为压缩数据块
+//         if (VerifyCompressedTimeSeriesSegmentBuffer(verifier)) {
+//             auto segment = GetCompressedTimeSeriesSegment(block_data);
+            
+//             // 解码时间戳
+//             DeltaDeltaDecoder decoder(
+//                 reinterpret_cast<const uint8_t*>(segment->metadata()->data()),
+//                 segment->metadata()->size());
+            
+//             // 获取值数组
+//             auto values = segment->values();
+//             if (values) {
+//                 // 遍历解码时间戳并匹配值
+//                 uint64_t timestamp;
+//                 size_t value_index = 0;
+//                 while (decoder.next(&timestamp)) {
+//                     // 检查是否在查询范围内
+//                     if (timestamp >= start && timestamp <= end) {
+//                         if (value_index < values->size()) {
+//                             results.emplace_back(timestamp, values->Get(value_index));
+//                         }
+//                     }
+//                     value_index++;
+//                 }
+//             }
+//         } else {
+//             // 尝试作为单个数据点解析
+//             auto point = flatbuffers::GetRoot<TimeSeriesPoint>(block_data);
+//             if (point->Verify(verifier)) {
+//                 uint64_t timestamp = point->timestamp();
+//                 // 检查是否是索引块（根据您的实现，索引点可能有特定的判断标准）
+//                 bool is_index_point = false;  // 您可能需要根据实际情况修改此判断
+                
+//                 // 如果不是索引点，并且在查询范围内，则添加到结果
+//                 if (!is_index_point && timestamp >= start && timestamp <= end) {
+//                     results.emplace_back(timestamp, point->value());
+//                 }
+//             }
+//         }
+        
+//         // 移动到下一个块
+//         current_pos = block_data + block_size;
+//     }
+    
+//     // 可选：对结果按时间戳排序（如果需要保证顺序）
+//     std::sort(results.begin(), results.end(), 
+//              [](const auto& a, const auto& b) { return a.first < b.first; });
+    
+//     return results;
+// }
 
 } // namespace tsdb

@@ -121,7 +121,8 @@ BENCHMARK_DEFINE_F(TSDBFixture, QueryRandomRange)(benchmark::State& state) {
 BENCHMARK_REGISTER_F(TSDBFixture, WritePerformance)
     ->ArgsProduct({
         {1'000, 10'000, 100'000}, // 数据点数量
-        {false, true}             // 是否压缩
+        // {false, true}             // 是否压缩
+        {true}
     })
     ->Unit(benchmark::kMillisecond)
     ->Threads(1)
@@ -131,7 +132,8 @@ BENCHMARK_REGISTER_F(TSDBFixture, WritePerformance)
 BENCHMARK_REGISTER_F(TSDBFixture, QueryFixedRange)
     ->ArgsProduct({
         {1'000, 10'000, 100'000, 1'000'000},
-        {false, true}
+        // {false, true}
+        {true}
     })
     ->Unit(benchmark::kMicrosecond)
     ->Threads(1)
@@ -140,7 +142,8 @@ BENCHMARK_REGISTER_F(TSDBFixture, QueryFixedRange)
 BENCHMARK_REGISTER_F(TSDBFixture, QueryRandomRange)
     ->ArgsProduct({
         {1'000, 10'000, 100'000, 1'000'000},
-        {false, true}
+        // {false, true}
+        {true}
     })
     ->Unit(benchmark::kMicrosecond)
     ->Threads(1)
