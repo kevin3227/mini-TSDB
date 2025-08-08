@@ -55,8 +55,6 @@ private:
     // 改进的索引结构：
     // 1. 按时间戳排序的数据块索引 (min_ts -> 块信息)
     std::map<uint64_t, BlockInfo> time_blocks_;
-    // 2. 块偏移量到块信息的映射
-    std::unordered_map<uint64_t, BlockInfo> offset_to_block_;
     
     bool index_loaded_ = false;
     std::mutex index_mutex_;  // 保护索引访问的互斥锁

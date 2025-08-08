@@ -78,7 +78,6 @@ void TSDBReader::loadIndex() {
         };
         
         time_blocks_[min_ts] = info;
-        offset_to_block_[block_offset] = info;
     }
     
     index_loaded_ = true;
@@ -161,7 +160,7 @@ void TSDBReader::loadIndexLazy(uint64_t start_ts, uint64_t end_ts) {
         current_pos = block_data + block_size;
         
         // 如果该块已被索引，跳过
-        if (offset_to_block_.find(block_offset) != offset_to_block_.end()) {
+        if (time_blocks_.find(block_offset) != time_blocks_.end()) {
             continue;
         }
         
@@ -203,7 +202,6 @@ void TSDBReader::loadIndexLazy(uint64_t start_ts, uint64_t end_ts) {
         };
     
         time_blocks_[min_ts] = info;
-        offset_to_block_[block_offset] = info;
     }
     
     // 更新已加载的范围
