@@ -16,7 +16,7 @@ This project is a lightweight time series database storage engine built using **
 
 ## 🧰 Technologies Used
 
-- **C++17**: For modern features like smart pointers, concurrency, and templates.
+- **C++17**: For modern features like smart pointers.
 - **mmap**: High-performance memory-mapped file operations.
 - **FlatBuffers**: Efficient binary serialization format.
 - **Delta-of-Delta Algorithm**: Optimized compression for time-series timestamps.
