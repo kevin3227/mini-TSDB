@@ -16,7 +16,7 @@ This project is a lightweight time series database storage engine built using **
 
 ## 🧰 Technologies Used
 
-- **C++17**: For modern features like smart pointers, concurrency, and templates.
+- **C++17**: For modern features like smart pointers.
 - **mmap**: High-performance memory-mapped file operations.
 - **FlatBuffers**: Efficient binary serialization format.
 - **Delta-of-Delta Algorithm**: Optimized compression for time-series timestamps.
@@ -34,20 +34,23 @@ mini-TSDB/
 │       ├── delta_delta.h         // Delta-of-Delta encoder/decoder
 │       ├── mmap_file.h           // Memory-mapped file management
 │       ├── tsdb_writer.h         // TSDB write interface
+│       ├── tsdb_reader.h         // TSDB read interface
 │       └── utils.h               // Utility functions
 ├── src/
 │   ├── delta_delta.cpp           // Implementation of Delta-of-Delta algorithm
 │   ├── mmap_file.cpp             // mmap file handling
 │   ├── tsdb_writer.cpp           // Write interface implementation
+│   ├── tsdb_reader.cpp           // Read interface implementation
 │   └── main.cpp                  // Example usage
 ├── test/
 │   ├── delta_delta_test.cpp      // Unit tests for Delta-of-Delta
 │   ├── mmap_file_test.cpp        // Unit tests for mmap
-│   └── writer_test.cpp           // Test for writing time series data
+│   ├── tsdb_writer_test.cpp           // Test for writing time series data
+│   └── tsdb_reader_test.cpp           // Test for reading time series data
 ├── schema/
 │   └── tsdb.fbs                  // FlatBuffers schema
 ├── benchmark/
-│   └── write_benchmark.cpp       // Performance benchmarking
+│   └── tsdb_benchmark.cpp       // Performance benchmarking
 ├── build/                        // Build output directory
 └── scripts/
     └── generate_flatbuffers.sh   // Script to generate FlatBuffers code
