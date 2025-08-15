@@ -20,13 +20,13 @@ TSDBWriter::TSDBWriter(const std::string& path,
       batch_size_(batch_size),
       merge_interval_(std::chrono::milliseconds(merge_interval_ms)) {
           
-    // 初始化Boost无锁SPSC队列
+    // 初始化Boost无锁队列
     size_t capacity = 1;
     while (capacity < queue_capacity) {
         capacity <<= 1;
     }
     
-    point_queue_.reset(new boost::lockfree::spsc_queue<TimePoint>(capacity));
+    point_queue_.reset(new boost::lockfree::queue<TimePoint>(capacity));
     
     // 启动后台处理线程
     background_thread_ = std::thread(&TSDBWriter::backgroundProcess, this);
@@ -137,9 +137,9 @@ void TSDBWriter::flush() {
     }
 }
 
-size_t TSDBWriter::pending_points() const {
-    return point_queue_->read_available();
-}
+// size_t TSDBWriter::pending_points() const {
+//     return point_queue_->read_available();
+// }
 
 void TSDBWriter::close() {
     if (running_.exchange(false)) {

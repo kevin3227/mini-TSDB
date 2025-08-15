@@ -11,7 +11,7 @@
 #include <mutex>
 #include <map>
 #include <memory>
-#include <boost/lockfree/spsc_queue.hpp>
+#include <boost/lockfree/queue.hpp>
 
 namespace tsdb {
 
@@ -49,9 +49,6 @@ public:
 
     // 关闭并持久化数据
     void close();
-    
-    // 返回缓冲区中等待写入的点数量
-    size_t pending_points() const;
 
 private:
     MMapFile mmap_file_;          // 封装 mmap 操作
@@ -59,9 +56,7 @@ private:
     size_t batch_size_;           // 批处理大小
     std::chrono::milliseconds merge_interval_; // 合并间隔
     
-    // boost::lockfree::spsc_queue是单生产者单消费者队列
-    // capacity参数在构造时指定，必须是2的幂
-    std::unique_ptr<boost::lockfree::spsc_queue<TimePoint>> point_queue_;
+    std::unique_ptr<boost::lockfree::queue<TimePoint>> point_queue_;
     
     // 用于合并排序的映射
     std::map<uint64_t, double> pending_points_; 
