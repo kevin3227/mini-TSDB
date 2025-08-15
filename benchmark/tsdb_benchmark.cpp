@@ -1,4 +1,4 @@
-// benchmark.cpp
+// tsdb_benchmark.cpp
 #include <benchmark/benchmark.h>
 #include "tsdb/tsdb_reader.h"
 #include "tsdb/tsdb_writer.h"
@@ -117,12 +117,89 @@ BENCHMARK_DEFINE_F(TSDBFixture, QueryRandomRange)(benchmark::State& state) {
     state.SetItemsProcessed(state.iterations());
 }
 
+// 多线程写入性能测试
+class TSDBMultiWriteFixture : public benchmark::Fixture {
+public:
+    void SetUp(const benchmark::State& state) override {
+        num_points_ = state.range(0);
+        num_threads_ = state.range(1);
+        compressed_ = state.range(2);
+        file_path_ = "/tmp/tsdb_multi_write.data";
+        points_per_thread_ = num_points_ / num_threads_;
+        
+        // 确保总点数能被线程数整除
+        if (num_points_ % num_threads_ != 0) {
+            throw std::runtime_error("Number of points must be divisible by number of threads");
+        }
+        
+        fs::remove(file_path_);
+    }
+
+    void TearDown(const benchmark::State&) override {
+        fs::remove(file_path_);
+    }
+
+protected:
+    size_t num_points_;
+    size_t num_threads_;
+    size_t points_per_thread_;
+    bool compressed_;
+    std::string file_path_;
+};
+
+// 多线程写入测试
+BENCHMARK_DEFINE_F(TSDBMultiWriteFixture, MultiThreadWrite)(benchmark::State& state) {
+    for (auto _ : state) {
+        state.PauseTiming();
+        fs::remove(file_path_);
+        tsdb::TSDBWriter writer(file_path_, 1 << 24, compressed_);
+        state.ResumeTiming();
+        
+        std::vector<std::thread> threads;
+        std::atomic<size_t> points_written(0);
+        
+        auto write_task = [&](int thread_id) {
+            TestDataGenerator gen(1609459200000 + thread_id * 1000, 
+                                1609459200000 + (thread_id + 1) * 1000, 
+                                0.0, 100.0);
+            
+            for (size_t i = 0; i < points_per_thread_; ++i) {
+                auto [ts, val] = gen.generate();
+                if (!writer.write(ts, val)) {
+                    state.SkipWithError("Write failed");
+                    return;
+                }
+                points_written++;
+            }
+        };
+        
+        // 启动线程
+        for (size_t i = 0; i < num_threads_; ++i) {
+            threads.emplace_back(write_task, i);
+        }
+        
+        // 等待完成
+        for (auto& t : threads) {
+            t.join();
+        }
+        
+        writer.close();
+        
+        // 验证写入点数
+        if (points_written != num_points_) {
+            state.SkipWithError("Point count mismatch");
+        }
+    }
+    
+    state.SetItemsProcessed(state.iterations() * num_points_);
+    state.SetBytesProcessed(state.iterations() * num_points_ * sizeof(double));
+}
+
 // 注册测试用例
 BENCHMARK_REGISTER_F(TSDBFixture, WritePerformance)
     ->ArgsProduct({
-        {1'000, 10'000, 100'000}, // 数据点数量
-        // {false, true}             // 是否压缩
-        {true}
+        {1'000, 10'000, 100'000, 1'000'000}, // 数据点数量
+        {true} // 是否压缩
     })
     ->Unit(benchmark::kMillisecond)
     ->Threads(1)
@@ -132,7 +209,6 @@ BENCHMARK_REGISTER_F(TSDBFixture, WritePerformance)
 BENCHMARK_REGISTER_F(TSDBFixture, QueryFixedRange)
     ->ArgsProduct({
         {1'000, 10'000, 100'000, 1'000'000},
-        // {false, true}
         {true}
     })
     ->Unit(benchmark::kMicrosecond)
@@ -142,7 +218,6 @@ BENCHMARK_REGISTER_F(TSDBFixture, QueryFixedRange)
 BENCHMARK_REGISTER_F(TSDBFixture, QueryRandomRange)
     ->ArgsProduct({
         {1'000, 10'000, 100'000, 1'000'000},
-        // {false, true}
         {true}
     })
     ->Unit(benchmark::kMicrosecond)
@@ -182,6 +257,17 @@ static void BM_ConcurrentQueries(benchmark::State& state) {
 BENCHMARK(BM_ConcurrentQueries)
     ->Arg(2)->Arg(4)->Arg(8)->Arg(16)
     ->Unit(benchmark::kMillisecond)
+    ->UseRealTime();
+
+// 注册多线程写入测试
+BENCHMARK_REGISTER_F(TSDBMultiWriteFixture, MultiThreadWrite)
+    ->ArgsProduct({
+        {1'000'000},       // 总数据点数量
+        {2, 4, 8, 16},               // 线程数
+        {true}                      // 压缩
+    })
+    ->Unit(benchmark::kMillisecond)
+    ->MeasureProcessCPUTime()
     ->UseRealTime();
 
 BENCHMARK_MAIN();

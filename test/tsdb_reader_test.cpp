@@ -9,9 +9,11 @@ int main() {
         auto points = reader.query(1700000000, 2000000000);
         
         std::cout << "Found " << points.size() << " points" << std::endl;
-        // for (const auto& p : points) {
-        //     std::cout << p.first << " => " << p.second << std::endl;
-        // }
+        // 打印前10个点
+        for (size_t i = 0; i < std::min(points.size(), size_t(10)); ++i) {
+            std::cout << "Timestamp: " << points[i].first 
+                      << ", Value: " << points[i].second << std::endl;
+        }
         
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;

@@ -23,7 +23,6 @@ add_executable(benchmark
     ../src/delta_delta.cpp
     ../src/tsdb_writer.cpp
     ../src/tsdb_reader.cpp
-    ../src/tsdb_index.cpp
 )
 
 # 设置目标属性
