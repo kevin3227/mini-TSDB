@@ -1,7 +1,17 @@
 #pragma once
-#include <string>
 #include <cstdint>
 #include <mutex>
+#include <thread>
+#include <atomic>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <stdexcept>
+#include <system_error>
+#include <cstring>
+#include <iostream>
+#include <condition_variable>
 
 namespace tsdb {
 
@@ -36,6 +46,47 @@ public:
     // 扩展 mmap 区域
     void expand(size_t needed_size);
 
+    void enableAsyncFlush(bool enable, size_t batch_threshold = 1024 * 1024) {
+        async_flush_ = enable;
+        batch_threshold_ = batch_threshold;
+        
+        if (enable && !flush_thread_.joinable()) {
+            running_ = true;
+            flush_thread_ = std::thread(&MMapFile::flushThreadMain, this);
+        }
+    }
+
+    void flushThreadMain() {
+        while (running_) {
+            size_t offset_to_flush = 0;
+            {
+                std::unique_lock<std::mutex> lock(mtx_);
+                flush_cv_.wait_for(lock, std::chrono::milliseconds(100),
+                    [this] { 
+                        return (offset_ - last_flushed_offset_ >= batch_threshold_) || 
+                               !running_; 
+                    });
+                
+                if (!running_) break;
+                if (offset_ <= last_flushed_offset_) continue;
+                
+                offset_to_flush = offset_;
+            }
+            
+            // 执行实际刷盘操作 (不持有锁)
+            if (offset_to_flush > last_flushed_offset_) {
+                // Linux特定API: 仅刷新mmap区域的部分数据
+                msync(data_ + last_flushed_offset_, 
+                      offset_to_flush - last_flushed_offset_,
+                      MS_ASYNC);  // 异步刷盘
+                
+                std::lock_guard<std::mutex> lock(mtx_);
+                last_flushed_offset_ = offset_to_flush;
+                last_flush_time_ = std::chrono::steady_clock::now();
+            }
+        }
+    }
+
 private:
     std::string path_;
     int fd_ = -1;
@@ -46,6 +97,14 @@ private:
     size_t offset_ = 0;              // 当前有效数据长度
     bool read_only_ = false;
     std::mutex mtx_;
+
+    std::thread flush_thread_;
+    std::atomic<bool> running_{false};
+    std::atomic<bool> async_flush_{false};
+    std::condition_variable flush_cv_;
+    size_t batch_threshold_ = 1024 * 1024; // 默认1MB批量阈值  
+    size_t last_flushed_offset_ = 0;
+    std::chrono::steady_clock::time_point last_flush_time_;
 };
 
 } // namespace tsdb

@@ -31,7 +31,7 @@ public:
     explicit TSDBWriter(const std::string& path, 
                         size_t initial_size = 1 << 30, 
                         bool compress = true, 
-                        size_t batch_size = 1000,
+                        size_t batch_size = 10000,
                         size_t queue_capacity = 100000,
                         size_t merge_interval_ms = 100);
 

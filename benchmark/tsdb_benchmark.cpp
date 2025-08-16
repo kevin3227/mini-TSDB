@@ -196,13 +196,24 @@ BENCHMARK_DEFINE_F(TSDBMultiWriteFixture, MultiThreadWrite)(benchmark::State& st
 }
 
 // 注册测试用例
-BENCHMARK_REGISTER_F(TSDBFixture, WritePerformance)
+// BENCHMARK_REGISTER_F(TSDBFixture, WritePerformance)
+//     ->ArgsProduct({
+//         {1'000, 10'000, 100'000, 1'000'000}, // 数据点数量
+//         {true} // 是否压缩
+//     })
+//     ->Unit(benchmark::kMillisecond)
+//     ->Threads(1)
+//     ->MeasureProcessCPUTime()
+//     ->UseRealTime();
+
+// 注册多线程写入测试
+BENCHMARK_REGISTER_F(TSDBMultiWriteFixture, MultiThreadWrite)
     ->ArgsProduct({
-        {1'000, 10'000, 100'000, 1'000'000}, // 数据点数量
-        {true} // 是否压缩
+        {1'000'000},       // 总数据点数量
+        {1, 2, 4, 8, 16},               // 线程数
+        {true}                      // 压缩
     })
     ->Unit(benchmark::kMillisecond)
-    ->Threads(1)
     ->MeasureProcessCPUTime()
     ->UseRealTime();
 
@@ -257,17 +268,6 @@ static void BM_ConcurrentQueries(benchmark::State& state) {
 BENCHMARK(BM_ConcurrentQueries)
     ->Arg(2)->Arg(4)->Arg(8)->Arg(16)
     ->Unit(benchmark::kMillisecond)
-    ->UseRealTime();
-
-// 注册多线程写入测试
-BENCHMARK_REGISTER_F(TSDBMultiWriteFixture, MultiThreadWrite)
-    ->ArgsProduct({
-        {1'000'000},       // 总数据点数量
-        {2, 4, 8, 16},               // 线程数
-        {true}                      // 压缩
-    })
-    ->Unit(benchmark::kMillisecond)
-    ->MeasureProcessCPUTime()
     ->UseRealTime();
 
 BENCHMARK_MAIN();

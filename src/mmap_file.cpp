@@ -1,14 +1,5 @@
 #include "tsdb/mmap_file.h"
 
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <stdexcept>
-#include <system_error>
-#include <cstring>
-#include <iostream>
-
 namespace tsdb {
 
 // 预留 8 字节作为元信息头，用于存储 length
@@ -169,18 +160,22 @@ void MMapFile::expand(size_t needed_size) {
 
 void MMapFile::append(const void* data, size_t size) {
     std::lock_guard<std::mutex> lock(mtx_);
-
-    if (read_only_) {
-        throw std::runtime_error("Cannot append to read-only mmap file");
-    }
-
+    
     if (offset_ + size > this->size_ - HEADER_SIZE) {
         expand(size);
     }
-
+    
     memcpy(data_start_ + offset_, data, size);
     offset_ += size;
-    *length_ptr_ = offset_; // 更新头部中的 length 字段
+    *length_ptr_ = offset_;
+    
+    // 检查是否需要触发异步刷盘
+    if (async_flush_ && 
+        (offset_ - last_flushed_offset_ >= batch_threshold_ ||
+            std::chrono::steady_clock::now() - last_flush_time_ >= 
+            std::chrono::seconds(1))) {
+        flush_cv_.notify_one();
+    }
 }
 
 } // namespace tsdb
