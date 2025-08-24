@@ -6,10 +6,23 @@
 
 namespace tsdb {
 
-TSDBReader::TSDBReader(const std::string& path) 
-    : mmap_file_(path, 0, true) {  // 以只读方式打开
+TSDBReader::TSDBReader(const std::string& path, size_t cache_capacity) 
+    : mmap_file_(path, 0, true),  // 以只读方式打开
+      cache_capacity_(cache_capacity) {
     data_ = static_cast<const uint8_t*>(mmap_file_.data());
     end_ = data_ + mmap_file_.length();
+}
+
+TSDBReader::~TSDBReader() {
+    clearCache();
+}
+
+void TSDBReader::clearCache() {
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    cache_map_.clear();
+    cache_list_.clear();
+    cache_hits_ = 0;
+    cache_misses_ = 0;
 }
 
 const uint8_t* TSDBReader::readNextBlock(const uint8_t* current_pos, uint32_t* out_size) {
@@ -217,10 +230,74 @@ void TSDBReader::loadIndexLazy(uint64_t start_ts, uint64_t end_ts) {
     }
 }
 
+// 查询LRU缓存
+bool TSDBReader::lookupCache(uint64_t start, uint64_t end, 
+                           std::vector<std::pair<uint64_t, double>>& result) {
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    
+    // 构建查询键
+    TimeRange range{start, end};
+    
+    // 查找精确匹配
+    auto it = cache_map_.find(range);
+    if (it != cache_map_.end()) {
+        // 缓存命中，将节点移到链表前端
+        cache_list_.splice(cache_list_.begin(), cache_list_, it->second);
+        
+        // 返回缓存的结果
+        result = it->second->data;
+        cache_hits_++;
+        return true;
+    }
+    
+    cache_misses_++;
+    return false;
+}
+
+// 更新LRU缓存
+void TSDBReader::updateCache(uint64_t start, uint64_t end,
+                          const std::vector<std::pair<uint64_t, double>>& data) {
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    
+    // 构建缓存键
+    TimeRange range{start, end};
+    
+    // 检查是否已存在
+    auto it = cache_map_.find(range);
+    if (it != cache_map_.end()) {
+        // 存在则更新数据并移到链表前端
+        it->second->data = data;
+        cache_list_.splice(cache_list_.begin(), cache_list_, it->second);
+        return;
+    }
+    
+    // 如果缓存已满，移除最后一个元素（最久未使用的）
+    if (cache_list_.size() >= cache_capacity_) {
+        // 获取最后一个节点的键
+        const TimeRange& last_range = cache_list_.back().range;
+        // 从映射中删除
+        cache_map_.erase(last_range);
+        // 从链表中删除
+        cache_list_.pop_back();
+    }
+    
+    // 在链表前端添加新节点
+    cache_list_.emplace_front(LRUCacheNode{range, data});
+    // 更新映射
+    cache_map_[range] = cache_list_.begin();
+}
+
 std::vector<std::pair<uint64_t, double>> TSDBReader::query(uint64_t start, uint64_t end) {
     std::vector<std::pair<uint64_t, double>> results;
     
-    // 按需加载索引（线程安全）
+    // 1. 尝试从缓存获取
+    if (lookupCache(start, end, results)) {
+        return results;  // 缓存命中
+    }
+    
+    // 2. 缓存未命中，执行原有查询逻辑
+    
+    // 按需加载索引
     loadIndexLazy(start, end);
     
     // 使用索引查找范围内的数据块
@@ -240,6 +317,9 @@ std::vector<std::pair<uint64_t, double>> TSDBReader::query(uint64_t start, uint6
     // 按时间戳排序结果
     std::sort(results.begin(), results.end(), 
               [](const auto& a, const auto& b) { return a.first < b.first; });
+    
+    // 3. 将查询结果更新到缓存
+    updateCache(start, end, results);
     
     return results;
 }
