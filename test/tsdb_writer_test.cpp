@@ -20,8 +20,12 @@ int main() {
         // 定义全局唯一时间戳生成器
         std::atomic<uint64_t> global_timestamp(1700000000);
         
-        // 创建写入器
+        // 删除旧的测试文件
+        if (std::filesystem::exists("test.tsdb")) {
+            std::filesystem::remove("test.tsdb");
+        }
 
+        // 创建写入器
         tsdb::TSDBWriter writer("test.tsdb", 1 << 20, true, 100, 50);
         
         // 跟踪所有生成的时间戳用于验证
