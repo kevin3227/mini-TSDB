@@ -127,7 +127,7 @@ private:
     
     // 用于合并排序的映射
     std::map<uint64_t, double> pending_points_; 
-    std::mutex merge_mutex_;
+    // std::mutex merge_mutex_;
     
     DeltaDeltaEncoder delta_encoder_;
     std::vector<double> values_;  // 值缓存（用于压缩模式）

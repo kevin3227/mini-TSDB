@@ -145,7 +145,6 @@ TSDBWriter::TSDBWriter(const std::string& path,
 }
 
 void TSDBWriter::flush() {
-    std::lock_guard<std::mutex> lock(merge_mutex_);
     flushes_++;
     
     // 处理所有已排序但未写入的点
@@ -227,8 +226,6 @@ void TSDBWriter::backgroundProcess() {
             (!preallocated_batch_.empty() || !pending_points_.empty());
         
         if (!preallocated_batch_.empty() || time_to_flush) {
-            std::lock_guard<std::mutex> lock(merge_mutex_);
-            
             // 将从队列取出的点加入待处理映射
             for (const auto& p : preallocated_batch_) {
                 pending_points_[p.timestamp] = p.value;
@@ -238,27 +235,20 @@ void TSDBWriter::backgroundProcess() {
             
             // 如果批次足够大或者到了定期刷新时间，处理这批数据
             if (batch_ready || time_to_flush) {
-                // 重新使用预分配的批处理
-                // 如果批次足够大或者到了定期刷新时间，处理这批数据
-                if (batch_ready || time_to_flush) {
-                    // 重新使用预分配的批处理缓冲区
-                    preallocated_batch_.clear();
-                    preallocated_batch_.reserve(pending_points_.size());
-                    
-                    // 将所有点合并为一个有序批次
-                    for (const auto& [ts, val] : pending_points_) {
-                        preallocated_batch_.push_back({ts, val});
-                    }
-                    pending_points_.clear();
-                    
-                    merge_mutex_.unlock();  // 提前解锁，允许写入继续
-                    
-                    // 处理批次
-                    processBatch(preallocated_batch_);
-                    
-                    merge_mutex_.lock();  // 重新加锁以保护最后阶段
-                    last_flush_time = now;  // 更新最后刷新时间
+                // 重新使用预分配的批处理缓冲区
+                preallocated_batch_.clear();
+                preallocated_batch_.reserve(pending_points_.size());
+                
+                // 将所有点合并为一个有序批次
+                for (const auto& [ts, val] : pending_points_) {
+                    preallocated_batch_.push_back({ts, val});
                 }
+                pending_points_.clear();
+                
+                // 处理批次
+                processBatch(preallocated_batch_);
+                
+                last_flush_time = now;  // 更新最后刷新时间
             }
         } 
         else if (current_count == 0) {
@@ -372,14 +362,14 @@ bool TSDBWriter::write(uint64_t timestamp, double value) {
 bool TSDBWriter::write_batch(const std::vector<TimePoint>& points) {
     if (points.empty()) return true;
     
-    // 对于较大的批次，直接进行处理可能比入队更高效
-    if (points.size() > batch_size_ / 2) {
-        std::lock_guard<std::mutex> lock(merge_mutex_);
-        for (const auto& point : points) {
-            pending_points_[point.timestamp] = point.value;
-        }
-        return true;
-    }
+    // // 对于较大的批次，直接进行处理可能比入队更高效
+    // if (points.size() > batch_size_ / 2) {
+    //     std::lock_guard<std::mutex> lock(merge_mutex_);
+    //     for (const auto& point : points) {
+    //         pending_points_[point.timestamp] = point.value;
+    //     }
+    //     return true;
+    // }
     
     // 对于小批次，通过队列提交
     for (const auto& point : points) {
