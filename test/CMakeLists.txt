@@ -7,6 +7,7 @@ enable_testing()
 # 查找依赖
 find_package(GTest REQUIRED)
 find_package(Flatbuffers REQUIRED)
+find_package(TBB REQUIRED)
 
 # 包含目录
 include_directories(
@@ -20,6 +21,8 @@ set(TSDB_TEST_LIBS
     GTest::GTest
     GTest::Main
     flatbuffers::flatbuffers
+    stdc++fs
+    TBB::tbb
 )
 
 # 1. mmap_file 测试

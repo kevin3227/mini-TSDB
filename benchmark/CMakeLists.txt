@@ -8,6 +8,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # 查找Google Benchmark库
 find_package(benchmark REQUIRED)
+find_package(Threads REQUIRED)
+find_package(TBB REQUIRED)
 
 # 包含目录设置
 include_directories(
@@ -36,6 +38,7 @@ target_link_libraries(benchmark PRIVATE
     benchmark::benchmark_main
     ${CMAKE_THREAD_LIBS_INIT}
     flatbuffers
+    TBB::tbb
 )
 
 # 可选的编译器优化（非调试模式）

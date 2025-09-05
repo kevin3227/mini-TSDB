@@ -1,273 +1,220 @@
-// tsdb_benchmark.cpp
 #include <benchmark/benchmark.h>
 #include "tsdb/tsdb_reader.h"
 #include "tsdb/tsdb_writer.h"
 #include <random>
 #include <filesystem>
 #include <thread>
+#include <atomic>
+#include <memory>
+#include <chrono>
+#include <functional>
 
 namespace fs = std::filesystem;
 
 // 测试数据生成工具
 class TestDataGenerator {
 public:
-    TestDataGenerator(uint64_t start_ts, uint64_t end_ts, double min_val, double max_val)
+    TestDataGenerator(uint64_t start_ts, uint64_t end_ts, double min_val, double max_val, uint64_t seed = 0)
         : start_ts_(start_ts), ts_range_(end_ts - start_ts),
           val_dist_(min_val, max_val), 
-          ts_dist_(0, ts_range_) {}
+          ts_dist_(0, ts_range_),
+          gen_(seed ? seed : std::random_device{}()) {}
     
     std::pair<uint64_t, double> generate() {
         uint64_t ts = start_ts_ + ts_dist_(gen_);
         double val = val_dist_(gen_);
         return {ts, val};
     }
+    
+    // 生成连续的时间戳（用于模拟顺序写入）
+    std::pair<uint64_t, double> generateSequential(uint64_t offset) {
+        uint64_t ts = start_ts_ + offset;
+        double val = val_dist_(gen_);
+        return {ts, val};
+    }
 
 private:
-    std::mt19937 gen_{std::random_device{}()};
+    std::mt19937 gen_;
     const uint64_t start_ts_;
     const uint64_t ts_range_;
     std::uniform_real_distribution<double> val_dist_;
     std::uniform_int_distribution<uint64_t> ts_dist_;
 };
 
-// 测试文件准备
-static void prepare_test_file(const std::string& path, size_t num_points, bool compressed) {
-    fs::remove(path); // 清理旧文件
+// 合并多个分片的查询结果
+std::vector<std::pair<uint64_t, double>> mergeResults(
+    const std::vector<std::vector<std::pair<uint64_t, double>>>& shard_results) {
     
-    TestDataGenerator gen(1609459200000, 1609545600000, 0.0, 100.0); // 24小时范围
-    tsdb::TSDBWriter writer(path, 1 << 24, compressed);
-    
-    for (size_t i = 0; i < num_points; ++i) {
-        auto [ts, val] = gen.generate();
-        writer.write(ts, val);
+    size_t total_size = 0;
+    for (const auto& shard : shard_results) {
+        total_size += shard.size();
     }
+    
+    std::vector<std::pair<uint64_t, double>> merged;
+    merged.reserve(total_size);
+    
+    for (const auto& shard : shard_results) {
+        merged.insert(merged.end(), shard.begin(), shard.end());
+    }
+    
+    std::sort(merged.begin(), merged.end(),
+        [](const auto& a, const auto& b) { return a.first < b.first; });
+    
+    return merged;
 }
 
-// 基准测试基类
-class TSDBFixture : public benchmark::Fixture {
-public:
-    void SetUp(const benchmark::State& state) override {
-        num_points_ = state.range(0);
-        compressed_ = state.range(1);
-        file_path_ = "/tmp/tsdb_bench.data";
-        prepare_test_file(file_path_, num_points_, compressed_);
-    }
-
-    void TearDown(const benchmark::State&) override {
-        fs::remove(file_path_);
-    }
-
-protected:
-    size_t num_points_;
-    bool compressed_;
-    std::string file_path_;
-};
-
-// 写入性能测试
-BENCHMARK_DEFINE_F(TSDBFixture, WritePerformance)(benchmark::State& state) {
-    for (auto _ : state) {
-        state.PauseTiming();
-        fs::remove(file_path_);
-        tsdb::TSDBWriter writer(file_path_, 1 << 24, compressed_);
-        TestDataGenerator gen(1609459200000, 1609545600000, 0.0, 100.0);
-        state.ResumeTiming();
-        
-        for (size_t i = 0; i < num_points_; ++i) {
-            auto [ts, val] = gen.generate();
-            writer.write(ts, val);
+// 查找所有分片文件并执行查询
+std::vector<std::pair<uint64_t, double>> queryAllShards(
+    const std::string& base_path, uint64_t start_ts, uint64_t end_ts) {
+    
+    std::vector<std::string> shard_paths;
+    shard_paths.push_back(base_path); // 添加主文件（如果存在）
+    
+    // 查找所有分片文件
+    for (int i = 0; ; i++) {
+        std::string shard_path = base_path + ".shard" + std::to_string(i);
+        if (fs::exists(shard_path)) {
+            shard_paths.push_back(shard_path);
+        } else if (i > 0 || !fs::exists(base_path)) {
+            // 找不到更多分片，或者主文件不存在
+            break;
         }
-        writer.close();
     }
     
-    state.SetItemsProcessed(state.iterations() * num_points_);
-    state.SetBytesProcessed(state.iterations() * num_points_ * sizeof(double));
-}
 
-// 查询性能测试 - 固定范围
-BENCHMARK_DEFINE_F(TSDBFixture, QueryFixedRange)(benchmark::State& state) {
-    tsdb::TSDBReader reader(file_path_);
-    const uint64_t start = 1609459200000 + 3600 * 1000; // 开始后1小时
-    const uint64_t end = start + 600 * 1000; // 10分钟范围
-    
-    for (auto _ : state) {
-        auto results = reader.query(start, end);
-        benchmark::DoNotOptimize(results);
+    // 为空的话退出
+    if (shard_paths.empty() || 
+        (shard_paths.size() == 1 && !fs::exists(shard_paths[0]))) {
+        return {};
     }
     
-    state.SetItemsProcessed(state.iterations());
-}
-
-// 查询性能测试 - 随机范围
-BENCHMARK_DEFINE_F(TSDBFixture, QueryRandomRange)(benchmark::State& state) {
-    tsdb::TSDBReader reader(file_path_);
-    TestDataGenerator gen(1609459200000, 1609545600000, 0.0, 100.0);
-    
-    for (auto _state : state) {
-        state.PauseTiming();
-        auto [ts1, _] = gen.generate();
-        auto [ts2, __] = gen.generate();
-        uint64_t start = std::min(ts1, ts2);
-        uint64_t end = std::max(ts1, ts2);
-        state.ResumeTiming();
-        
-        auto results = reader.query(start, end);
-        benchmark::DoNotOptimize(results);
-    }
-    
-    state.SetItemsProcessed(state.iterations());
-}
-
-// 多线程写入性能测试
-class TSDBMultiWriteFixture : public benchmark::Fixture {
-public:
-    void SetUp(const benchmark::State& state) override {
-        num_points_ = state.range(0);
-        num_threads_ = state.range(1);
-        compressed_ = state.range(2);
-        file_path_ = "/tmp/tsdb_multi_write.data";
-        points_per_thread_ = num_points_ / num_threads_;
-        
-        // 确保总点数能被线程数整除
-        if (num_points_ % num_threads_ != 0) {
-            throw std::runtime_error("Number of points must be divisible by number of threads");
+    // 从每个分片读取数据
+    std::vector<std::vector<std::pair<uint64_t, double>>> shard_results;
+    for (const auto& path : shard_paths) {
+        if (fs::exists(path)) {
+            try {
+                tsdb::TSDBReader reader(path);
+                auto points = reader.query(start_ts, end_ts);
+                if (!points.empty()) {
+                    shard_results.push_back(std::move(points));
+                }
+            } catch (const std::exception&) {
+                // 忽略读取错误，继续处理其他分片
+            }
         }
-        
-        fs::remove(file_path_);
     }
+    
+    // 合并结果
+    return mergeResults(shard_results);
+}
 
-    void TearDown(const benchmark::State&) override {
-        fs::remove(file_path_);
+// 清理所有分片文件
+void cleanupShardFiles(const std::string& base_path, int max_shards = 32) {
+    if (fs::exists(base_path)) {
+        fs::remove(base_path);
     }
+    
+    for (int i = 0; i < max_shards; i++) {
+        std::string shard_path = base_path + ".shard" + std::to_string(i);
+        if (fs::exists(shard_path)) {
+            fs::remove(shard_path);
+        }
+    }
+}
 
-protected:
-    size_t num_points_;
-    size_t num_threads_;
-    size_t points_per_thread_;
-    bool compressed_;
-    std::string file_path_;
-};
-
-// 多线程写入测试
-BENCHMARK_DEFINE_F(TSDBMultiWriteFixture, MultiThreadWrite)(benchmark::State& state) {
+// 多线程写入基准测试
+static void BM_MultiThreadWrite(benchmark::State& state) {
+    const size_t num_points = state.range(0);
+    const size_t num_threads = state.range(1);
+    const bool compressed = state.range(2) != 0;
+    const size_t num_shards = state.range(3);
+    const std::string file_path = "/tmp/tsdb_sharded_bench_" + 
+                                 std::to_string(num_shards) + ".data";
+    
+    // 点数必须能被线程数整除
+    const size_t points_per_thread = num_points / num_threads;
+    if (num_points % num_threads != 0) {
+        state.SkipWithError("Points count must be divisible by thread count");
+        return;
+    }
+    
     for (auto _ : state) {
         state.PauseTiming();
-        fs::remove(file_path_);
-        tsdb::TSDBWriter writer(file_path_, 1 << 24, compressed_);
-        state.ResumeTiming();
+        // 清理旧文件
+        cleanupShardFiles(file_path, num_shards);
+        
+        // 创建写入器（单文件或分片模式）
+        std::unique_ptr<tsdb::TSDBWriter> writer;
+        if (num_shards > 1) {
+            writer = std::make_unique<tsdb::TSDBWriter>(
+                file_path, 1 << 24, compressed, 1000, 50000, 100, num_shards);
+        } else {
+            writer = std::make_unique<tsdb::TSDBWriter>(
+                file_path, 1 << 24, compressed);
+        }
         
         std::vector<std::thread> threads;
-        std::atomic<size_t> points_written(0);
+        std::atomic<size_t> total_written{0};
+        state.ResumeTiming();
         
-        auto write_task = [&](int thread_id) {
-            TestDataGenerator gen(1609459200000 + thread_id * 1000, 
-                                1609459200000 + (thread_id + 1) * 1000, 
-                                0.0, 100.0);
-            
-            for (size_t i = 0; i < points_per_thread_; ++i) {
-                auto [ts, val] = gen.generate();
-                if (!writer.write(ts, val)) {
-                    state.SkipWithError("Write failed");
-                    return;
+        // 启动写入线程
+        for (size_t t = 0; t < num_threads; ++t) {
+            threads.emplace_back([&, thread_id = t]() {
+                // 使用线程ID作为随机种子，确保每个线程生成不同的数据
+                TestDataGenerator gen(
+                    1609459200000, 1609545600000, 0.0, 100.0, thread_id);
+                
+                // 每批写入的点数
+                const size_t batch_size = 100;
+                std::vector<tsdb::TimePoint> batch;
+                batch.reserve(batch_size);
+                
+                for (size_t i = 0; i < points_per_thread; ++i) {
+                    auto [ts, val] = gen.generateSequential(i * num_threads + thread_id);
+                    batch.push_back({ts, val});
+                    
+                    if (batch.size() >= batch_size || i == points_per_thread - 1) {
+                        if (writer->write_batch(batch)) {
+                            total_written += batch.size();
+                        }
+                        batch.clear();
+                    }
                 }
-                points_written++;
-            }
-        };
-        
-        // 启动线程
-        for (size_t i = 0; i < num_threads_; ++i) {
-            threads.emplace_back(write_task, i);
+            });
         }
         
-        // 等待完成
+        // 等待所有线程完成
         for (auto& t : threads) {
             t.join();
         }
         
-        writer.close();
+        writer->close();
         
         // 验证写入点数
-        if (points_written != num_points_) {
-            state.SkipWithError("Point count mismatch");
+        if (total_written != num_points) {
+            state.SkipWithError("Failed to write all points");
+            return;
         }
     }
     
-    state.SetItemsProcessed(state.iterations() * num_points_);
-    state.SetBytesProcessed(state.iterations() * num_points_ * sizeof(double));
+    // 统计指标
+    state.SetItemsProcessed(state.iterations() * num_points);
+    state.SetBytesProcessed(state.iterations() * num_points * (sizeof(double) + sizeof(uint64_t)));
+    
+    // 清理文件
+    cleanupShardFiles(file_path, num_shards);
 }
 
-// 注册测试用例
-// BENCHMARK_REGISTER_F(TSDBFixture, WritePerformance)
-//     ->ArgsProduct({
-//         {1'000, 10'000, 100'000, 1'000'000}, // 数据点数量
-//         {true} // 是否压缩
-//     })
-//     ->Unit(benchmark::kMillisecond)
-//     ->Threads(1)
-//     ->MeasureProcessCPUTime()
-//     ->UseRealTime();
-
-// 注册多线程写入测试
-BENCHMARK_REGISTER_F(TSDBMultiWriteFixture, MultiThreadWrite)
-    ->ArgsProduct({
-        {1'000'000},       // 总数据点数量
-        {1, 2, 4, 8, 16},               // 线程数
-        {true}                      // 压缩
-    })
-    ->Unit(benchmark::kMillisecond)
-    ->MeasureProcessCPUTime()
-    ->UseRealTime();
-
-BENCHMARK_REGISTER_F(TSDBFixture, QueryFixedRange)
-    ->ArgsProduct({
-        {1'000, 10'000, 100'000, 1'000'000},
-        {true}
-    })
-    ->Unit(benchmark::kMicrosecond)
-    ->Threads(1)
-    ->MeasureProcessCPUTime();
-
-BENCHMARK_REGISTER_F(TSDBFixture, QueryRandomRange)
-    ->ArgsProduct({
-        {1'000, 10'000, 100'000, 1'000'000},
-        {true}
-    })
-    ->Unit(benchmark::kMicrosecond)
-    ->Threads(1)
-    ->MeasureProcessCPUTime();
-
-// 并发查询测试
-static void BM_ConcurrentQueries(benchmark::State& state) {
-    const std::string path = "/tmp/tsdb_concurrent.data";
-    prepare_test_file(path, 1'000'000, true);
-    tsdb::TSDBReader reader(path);
-    
-    std::vector<std::thread> threads;
-    const int num_threads = state.range(0);
-    std::atomic<int> queries_done{0};
-    
-    for (auto _ : state) {
-        for (int i = 0; i < num_threads; ++i) {
-            threads.emplace_back([&] {
-                TestDataGenerator gen(1609459200000, 1609545600000, 0.0, 100.0);
-                auto [ts1, _] = gen.generate();
-                auto [ts2, __] = gen.generate();
-                auto results = reader.query(std::min(ts1, ts2), std::max(ts1, ts2));
-                benchmark::DoNotOptimize(results);
-                queries_done++;
-            });
-        }
-        
-        for (auto& t : threads) t.join();
-        threads.clear();
-    }
-    
-    state.SetItemsProcessed(queries_done);
-    fs::remove(path);
-}
-
-BENCHMARK(BM_ConcurrentQueries)
-    ->Arg(2)->Arg(4)->Arg(8)->Arg(16)
-    ->Unit(benchmark::kMillisecond)
-    ->UseRealTime();
+// 注册基准测试
+BENCHMARK(BM_MultiThreadWrite)
+    ->Args({1000000, 2, 1, 2})
+    ->Args({1000000, 2, 1, 4})
+    ->Args({1000000, 4, 1, 2})
+    ->Args({1000000, 4, 1, 4})
+    ->Args({1000000, 8, 1, 2})
+    ->Args({1000000, 8, 1, 4})
+    ->Args({1000000, 16, 1, 2})
+    ->Args({1000000, 16, 1, 4})
+    ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_MAIN();

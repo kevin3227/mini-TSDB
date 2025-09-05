@@ -155,7 +155,7 @@ void MMapFile::expand(size_t needed_size) {
     data_start_ = data_ + HEADER_SIZE;
     size_ = new_size;
 
-    std::cout << "Expanded mmap to " << new_size << " bytes" << std::endl;
+    // std::cout << "Expanded mmap to " << new_size << " bytes" << std::endl;
 }
 
 void MMapFile::append(const void* data, size_t size) {

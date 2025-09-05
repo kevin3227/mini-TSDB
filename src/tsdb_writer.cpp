@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <chrono>
 #include <boost/align/aligned_allocator.hpp>
+#include <sstream>
+#include <filesystem>
 
 namespace tsdb {
 
@@ -117,214 +119,30 @@ void MemoryPool::deallocate(void* ptr, size_t size) {
     ::free(ptr);
 }
 
-TSDBWriter::TSDBWriter(const std::string& path, 
-                      size_t initial_size, 
-                      bool compress,
-                      size_t batch_size,
-                      size_t queue_capacity,
-                      size_t merge_interval_ms)
+// ShardWriter实现
+ShardWriter::ShardWriter(const std::string& path, size_t initial_size, bool compress, size_t batch_size)
     : mmap_file_(path, initial_size, /*read_only=*/false), 
       compress_(compress),
-      batch_size_(batch_size),
-      merge_interval_(std::chrono::milliseconds(merge_interval_ms)) {
-          
-    // 初始化Boost无锁队列
-    size_t capacity = 1;
-    while (capacity < queue_capacity) {
-        capacity <<= 1;
-    }
-    
-    point_queue_.reset(new boost::lockfree::queue<TimePoint>(capacity));
-    
-    // 预分配批处理缓冲区
-    preallocated_batch_.reserve(batch_size_ * 2);
-    values_.reserve(batch_size_ * 2);
-    
-    // 启动后台处理线程
-    background_thread_ = std::thread(&TSDBWriter::backgroundProcess, this);
+      batch_size_(batch_size) {
+    values_.reserve(batch_size * 2);
 }
 
-void TSDBWriter::flush() {
-    flushes_++;
-    
-    // 处理所有已排序但未写入的点
-    if (!pending_points_.empty()) {
-        // 使用预分配的批处理缓冲区
-        preallocated_batch_.clear();
-        preallocated_batch_.reserve(pending_points_.size());
-        
-        for (const auto& [ts, val] : pending_points_) {
-            preallocated_batch_.push_back({ts, val});
-        }
-        pending_points_.clear();
-        
-        // 根据压缩设置处理批次
-        for (const auto& point : preallocated_batch_) {
-            if (compress_) {
-                writeCompressed(point.timestamp, point.value);
-            } else {
-                writeRaw(point.timestamp, point.value);
-            }
-        }
-    }
-    
-    // 压缩模式下，确保当前缓冲区的点被写入
-    if (compress_ && !values_.empty()) {
-        // 使用内存池分配的FlatBufferBuilder
-        flatbuffers::FlatBufferBuilder builder(values_.size() * 16, &pooled_allocator_);
+ShardWriter::~ShardWriter() {
+    close();
+}
 
-        auto encoded = delta_encoder_.finish();
-        auto dd_vec = builder.CreateVector(
-            reinterpret_cast<const int8_t*>(encoded.data()), 
-            encoded.size()
-        );
-        auto values_vec = builder.CreateVector(values_);
-
-        auto segment = CreateCompressedTimeSeriesSegment(builder, dd_vec, values_vec);
-        builder.Finish(segment);
-
-        // 写入大小前缀
-        uint32_t size = builder.GetSize();
-        mmap_file_.append(reinterpret_cast<const uint8_t*>(&size), sizeof(size));
-        
-        // 写入数据
-        mmap_file_.append(builder.GetBufferPointer(), size);
-        points_written_ += values_.size();
-
-        // 重置
-        values_.clear();
-        delta_encoder_ = DeltaDeltaEncoder();
-        min_timestamp_ = max_timestamp_ = 0;
+void ShardWriter::write(uint64_t timestamp, double value) {
+    std::lock_guard<std::mutex> lock(write_mutex_);
+    if (compress_) {
+        writeCompressed(timestamp, value);
+    } else {
+        writeRaw(timestamp, value);
     }
 }
 
-void TSDBWriter::backgroundProcess() {
-    // 使用预分配的缓冲区
-    preallocated_batch_.clear();
-    preallocated_batch_.reserve(batch_size_);
-    
-    auto last_flush_time = std::chrono::steady_clock::now();
-    
-    while (running_) {
-        bool batch_ready = false;
-        
-        // 收集队列中的点
-        preallocated_batch_.clear();
-        TimePoint point;
-        size_t current_count = 0;
-        
-        // 从队列中批量取出点，最多取到batch_size_
-        while (current_count < batch_size_ && point_queue_->pop(point)) {
-            preallocated_batch_.push_back(point);
-            current_count++;
-        }
-        
-        // 判断是否需要刷新
-        auto now = std::chrono::steady_clock::now();
-        bool time_to_flush = 
-            now - last_flush_time >= merge_interval_ && 
-            (!preallocated_batch_.empty() || !pending_points_.empty());
-        
-        if (!preallocated_batch_.empty() || time_to_flush) {
-            // 将从队列取出的点加入待处理映射
-            for (const auto& p : preallocated_batch_) {
-                pending_points_[p.timestamp] = p.value;
-            }
-            
-            batch_ready = pending_points_.size() >= batch_size_;
-            
-            // 如果批次足够大或者到了定期刷新时间，处理这批数据
-            if (batch_ready || time_to_flush) {
-                // 重新使用预分配的批处理缓冲区
-                preallocated_batch_.clear();
-                preallocated_batch_.reserve(pending_points_.size());
-                
-                // 将所有点合并为一个有序批次
-                for (const auto& [ts, val] : pending_points_) {
-                    preallocated_batch_.push_back({ts, val});
-                }
-                pending_points_.clear();
-                
-                // 处理批次
-                processBatch(preallocated_batch_);
-                
-                last_flush_time = now;  // 更新最后刷新时间
-            }
-        } 
-        else if (current_count == 0) {
-            // 队列为空，短暂休眠减少CPU占用
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
-    }
-}
-
-void TSDBWriter::writeRaw(uint64_t timestamp, double value) {
-    // 使用内存池分配的FlatBufferBuilder
-    flatbuffers::FlatBufferBuilder builder(64, &pooled_allocator_);
-
-    auto point = CreateTimeSeriesPoint(builder, timestamp, value);
-    builder.Finish(point);
-
-    // 记录当前块的时间戳范围
-    if (min_timestamp_ == 0 || timestamp < min_timestamp_) min_timestamp_ = timestamp;
-    if (timestamp > max_timestamp_) max_timestamp_ = timestamp;
-
-    // 写入大小前缀
-    uint32_t size = builder.GetSize();
-    uint64_t offset = mmap_file_.length();
-    mmap_file_.append(reinterpret_cast<const uint8_t*>(&size), sizeof(size));
-    
-    // 写入数据
-    mmap_file_.append(builder.GetBufferPointer(), size);
-    points_written_++;
-
-    min_timestamp_ = max_timestamp_ = 0;  // 重置时间戳范围
-}
-
-void TSDBWriter::writeCompressed(uint64_t timestamp, double value) {
-    delta_encoder_.addTimestamp(timestamp);
-    values_.push_back(value);
-
-    // 记录当前块的时间戳范围
-    if (min_timestamp_ == 0 || timestamp < min_timestamp_) min_timestamp_ = timestamp;
-    if (timestamp > max_timestamp_) max_timestamp_ = timestamp;
-
-    if (values_.size() >= batch_size_) {
-        // 使用内存池分配的FlatBufferBuilder
-        flatbuffers::FlatBufferBuilder builder(values_.size() * 16, &pooled_allocator_);
-
-        auto encoded = delta_encoder_.finish();
-        auto dd_vec = builder.CreateVector(
-            reinterpret_cast<const int8_t*>(encoded.data()), 
-            encoded.size()
-        );
-        auto values_vec = builder.CreateVector(values_);
-
-        auto segment = CreateCompressedTimeSeriesSegment(builder, dd_vec, values_vec);
-        builder.Finish(segment);
-
-        // 写入大小前缀
-        uint32_t size = builder.GetSize();
-        uint64_t offset = mmap_file_.length();
-        mmap_file_.append(reinterpret_cast<const uint8_t*>(&size), sizeof(size));
-        
-        // 写入数据
-        mmap_file_.append(builder.GetBufferPointer(), size);
-        points_written_ += values_.size();
-
-        min_timestamp_ = max_timestamp_ = 0;  // 重置时间戳范围
-
-        // 清空缓存但保留容量
-        values_.clear();
-        delta_encoder_ = DeltaDeltaEncoder();
-    }
-}
-
-void TSDBWriter::processBatch(const std::vector<TimePoint>& batch) {
-    if (batch.empty()) return;
-    
-    // 处理有序批次
-    for (const auto& point : batch) {
+void ShardWriter::writeBatch(const std::vector<TimePoint>& points) {
+    std::lock_guard<std::mutex> lock(write_mutex_);
+    for (const auto& point : points) {
         if (compress_) {
             writeCompressed(point.timestamp, point.value);
         } else {
@@ -333,24 +151,172 @@ void TSDBWriter::processBatch(const std::vector<TimePoint>& batch) {
     }
 }
 
+void ShardWriter::writeRaw(uint64_t timestamp, double value) {
+    flatbuffers::FlatBufferBuilder builder(64, &pooled_allocator_);
+    auto point = CreateTimeSeriesPoint(builder, timestamp, value);
+    builder.Finish(point);
+
+    // 记录时间戳范围
+    if (min_timestamp_ == 0 || timestamp < min_timestamp_) min_timestamp_ = timestamp;
+    if (timestamp > max_timestamp_) max_timestamp_ = timestamp;
+
+    // 写入大小前缀和数据
+    uint32_t size = builder.GetSize();
+    mmap_file_.append(&size, sizeof(size));
+    mmap_file_.append(builder.GetBufferPointer(), size);
+    points_written_++;
+
+    min_timestamp_ = max_timestamp_ = 0;  // 重置时间戳范围
+}
+
+void ShardWriter::writeCompressed(uint64_t timestamp, double value) {
+    delta_encoder_.addTimestamp(timestamp);
+    values_.push_back(value);
+
+    // 记录时间戳范围
+    if (min_timestamp_ == 0 || timestamp < min_timestamp_) min_timestamp_ = timestamp;
+    if (timestamp > max_timestamp_) max_timestamp_ = timestamp;
+
+    if (values_.size() >= batch_size_) {
+        flatbuffers::FlatBufferBuilder builder(values_.size() * 16, &pooled_allocator_);
+
+        auto encoded = delta_encoder_.finish();
+        auto dd_vec = builder.CreateVector(
+            reinterpret_cast<const int8_t*>(encoded.data()), 
+            encoded.size()
+        );
+        auto values_vec = builder.CreateVector(values_);
+
+        auto segment = CreateCompressedTimeSeriesSegment(builder, dd_vec, values_vec);
+        builder.Finish(segment);
+
+        // 写入大小前缀和数据
+        uint32_t size = builder.GetSize();
+        mmap_file_.append(&size, sizeof(size));
+        mmap_file_.append(builder.GetBufferPointer(), size);
+        points_written_ += values_.size();
+
+        // 重置状态
+        values_.clear();
+        delta_encoder_ = DeltaDeltaEncoder();
+        min_timestamp_ = max_timestamp_ = 0;
+    }
+}
+
+void ShardWriter::flush() {
+    std::lock_guard<std::mutex> lock(write_mutex_);
+    
+    // 确保所有压缩数据都被写入
+    if (compress_ && !values_.empty()) {
+        flatbuffers::FlatBufferBuilder builder(values_.size() * 16, &pooled_allocator_);
+
+        auto encoded = delta_encoder_.finish();
+        auto dd_vec = builder.CreateVector(
+            reinterpret_cast<const int8_t*>(encoded.data()), 
+            encoded.size()
+        );
+        auto values_vec = builder.CreateVector(values_);
+
+        auto segment = CreateCompressedTimeSeriesSegment(builder, dd_vec, values_vec);
+        builder.Finish(segment);
+
+        // 写入大小前缀和数据
+        uint32_t size = builder.GetSize();
+        mmap_file_.append(&size, sizeof(size));
+        mmap_file_.append(builder.GetBufferPointer(), size);
+        points_written_ += values_.size();
+
+        // 重置状态
+        values_.clear();
+        delta_encoder_ = DeltaDeltaEncoder();
+        min_timestamp_ = max_timestamp_ = 0;
+    }
+}
+
+void ShardWriter::close() {
+    flush();
+}
+
+// TSDBWriter 实现
+TSDBWriter::TSDBWriter(const std::string& path, 
+                      size_t initial_size, 
+                      bool compress,
+                      size_t batch_size,
+                      size_t queue_capacity,
+                      size_t merge_interval_ms,
+                      size_t shard_count)
+    : base_path_(path),
+      compress_(compress),
+      batch_size_(batch_size),
+      shard_count_(shard_count),
+      merge_interval_(std::chrono::milliseconds(merge_interval_ms)) {
+    
+    // 确保基础目录存在
+    std::filesystem::path dir_path(path);
+    dir_path = dir_path.parent_path();
+    if (!dir_path.empty() && !std::filesystem::exists(dir_path)) {
+        std::filesystem::create_directories(dir_path);
+    }
+    
+    // 初始化每个分片的队列和写入器
+    shard_queues_.resize(shard_count_);
+    shard_writers_.resize(shard_count_);
+    
+    // 计算队列容量 (2的幂次)
+    size_t capacity = 1;
+    while (capacity < queue_capacity / shard_count_) {
+        capacity <<= 1;
+    }
+    
+    // 创建分片队列和写入器
+    for (size_t i = 0; i < shard_count_; ++i) {
+        // 创建分片队列
+        shard_queues_[i].reset(new boost::lockfree::queue<TimePoint>(capacity));
+        
+        // 为每个分片创建文件路径
+        std::ostringstream shard_path;
+        shard_path << base_path_ << ".shard" << i;
+        
+        // 创建分片写入器
+        shard_writers_[i].reset(new ShardWriter(
+            shard_path.str(), 
+            initial_size / shard_count_,  // 均分初始大小
+            compress, 
+            batch_size));
+    }
+    
+    // 启动分片处理线程
+    shard_threads_.resize(shard_count_);
+    for (size_t i = 0; i < shard_count_; ++i) {
+        shard_threads_[i] = std::thread(&TSDBWriter::shardProcessThread, this, i);
+    }
+}
+
+TSDBWriter::~TSDBWriter() {
+    close();
+}
+
 bool TSDBWriter::write(uint64_t timestamp, double value) {
+    // 计算分片索引
+    uint32_t shard_idx = getShardIndex(timestamp);
+    
+    // 创建数据点
     TimePoint point{timestamp, value};
     
-    // 尝试放入队列，如果队列满则进行重试
+    // 尝试放入对应分片的队列
     int retry_count = 0;
-    while (!point_queue_->push(point)) {
-        // 队列满，给后台线程一点时间处理
+    while (!shard_queues_[shard_idx]->push(point)) {
+        // 队列满，等待处理
         queue_full_count_++;
         
         if (retry_count++ > 100) {
-            // 超过重试次数，主动刷新一次
-            flush();
+            // 超过重试次数，主动刷新该分片
+            shard_writers_[shard_idx]->flush();
             retry_count = 0;
         }
         
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
         
-        // 如果系统已关闭，返回失败
         if (!running_) {
             return false;
         }
@@ -362,38 +328,136 @@ bool TSDBWriter::write(uint64_t timestamp, double value) {
 bool TSDBWriter::write_batch(const std::vector<TimePoint>& points) {
     if (points.empty()) return true;
     
-    // // 对于较大的批次，直接进行处理可能比入队更高效
-    // if (points.size() > batch_size_ / 2) {
-    //     std::lock_guard<std::mutex> lock(merge_mutex_);
-    //     for (const auto& point : points) {
-    //         pending_points_[point.timestamp] = point.value;
-    //     }
-    //     return true;
-    // }
-    
-    // 对于小批次，通过队列提交
+    // 按分片对点进行分组
+    std::vector<std::vector<TimePoint>> shard_points(shard_count_);
     for (const auto& point : points) {
-        if (!write(point.timestamp, point.value)) {
-            return false;
+        uint32_t shard_idx = getShardIndex(point.timestamp);
+        shard_points[shard_idx].push_back(point);
+    }
+    
+    // 处理每个分片的点
+    for (size_t i = 0; i < shard_count_; ++i) {
+        if (shard_points[i].empty()) continue;
+        
+        // 大批量直接写入，小批量放入队列
+        if (shard_points[i].size() > batch_size_ / 2) {
+            shard_writers_[i]->writeBatch(shard_points[i]);
+            points_written_ += shard_points[i].size();
+        } else {
+            for (const auto& point : shard_points[i]) {
+                int retry_count = 0;
+                while (!shard_queues_[i]->push(point)) {
+                    queue_full_count_++;
+                    
+                    if (retry_count++ > 100) {
+                        shard_writers_[i]->flush();
+                        retry_count = 0;
+                    }
+                    
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    
+                    if (!running_) {
+                        return false;
+                    }
+                }
+            }
         }
     }
     
     return true;
 }
 
-TSDBWriter::~TSDBWriter() {
-    close();
+void TSDBWriter::shardProcessThread(size_t shard_index) {
+    // 预分配批处理缓冲区
+    std::vector<TimePoint> batch;
+    batch.reserve(batch_size_ * 2);
+    
+    // 记录上次刷新时间
+    auto last_flush_time = std::chrono::steady_clock::now();
+    
+    // 映射用于对每个批次内的点进行排序
+    std::map<uint64_t, double> pending_points;
+    
+    while (running_) {
+        bool batch_ready = false;
+        
+        // 从队列中批量取出点
+        batch.clear();
+        TimePoint point;
+        size_t count = 0;
+        
+        while (count < batch_size_ && shard_queues_[shard_index]->pop(point)) {
+            batch.push_back(point);
+            count++;
+        }
+        
+        // 检查是否需要刷新
+        auto now = std::chrono::steady_clock::now();
+        bool time_to_flush = (now - last_flush_time >= merge_interval_) && 
+                            (!batch.empty() || !pending_points.empty());
+        
+        if (!batch.empty()) {
+            // 将新点加入排序映射
+            for (const auto& p : batch) {
+                pending_points[p.timestamp] = p.value;
+            }
+            
+            batch_ready = pending_points.size() >= batch_size_;
+        }
+        
+        // 处理批次
+        if (batch_ready || time_to_flush) {
+            if (!pending_points.empty()) {
+                // 准备有序批次
+                batch.clear();
+                for (const auto& [ts, val] : pending_points) {
+                    batch.push_back({ts, val});
+                }
+                pending_points.clear();
+                
+                // 写入批次
+                processShardBatch(shard_index, batch);
+                last_flush_time = now;
+            }
+        } 
+        else if (count == 0) {
+            // 队列为空，短暂休眠减少CPU占用
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+}
+
+void TSDBWriter::processShardBatch(size_t shard_index, const std::vector<TimePoint>& batch) {
+    if (batch.empty()) return;
+    
+    // 直接写入对应分片的写入器
+    shard_writers_[shard_index]->writeBatch(batch);
+    
+    // 更新统计信息
+    points_written_ += batch.size();
+}
+
+void TSDBWriter::flush() {
+    // 刷新所有分片写入器
+    for (auto& writer : shard_writers_) {
+        writer->flush();
+    }
+    flushes_++;
 }
 
 void TSDBWriter::close() {
     if (running_.exchange(false)) {
-        // 等待后台线程完成
-        if (background_thread_.joinable()) {
-            background_thread_.join();
+        // 等待所有分片线程完成
+        for (auto& thread : shard_threads_) {
+            if (thread.joinable()) {
+                thread.join();
+            }
         }
         
-        // 执行最后的刷新
-        flush();
+        // 刷新并关闭所有分片写入器
+        for (auto& writer : shard_writers_) {
+            writer->close();
+        }
     }
 }
 
