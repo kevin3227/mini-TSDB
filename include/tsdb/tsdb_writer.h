@@ -2,6 +2,8 @@
 
 #include "tsdb/mmap_file.h"
 #include "tsdb/delta_delta.h"
+#include "tsdb/wal.h"
+#include "tsdb/tsdb_generated.h"
 
 #include <vector>
 #include <string>
@@ -17,16 +19,6 @@
 #include <functional>
 
 namespace tsdb {
-
-// 时序数据点
-struct TimePoint {
-    uint64_t timestamp;
-    double value;
-    
-    bool operator<(const TimePoint& other) const {
-        return timestamp < other.timestamp;
-    }
-};
 
 // 自定义内存分配器
 class MemoryPool {
@@ -163,6 +155,8 @@ private:
     size_t batch_size_;     // 批处理大小
     size_t shard_count_;    // 分片数量
     std::chrono::milliseconds merge_interval_; // 合并间隔
+
+    std::unique_ptr<WALWriter> wal_; // WAL写入器
     
     // 分片哈希函数
     uint32_t getShardIndex(uint64_t timestamp) const {
@@ -191,6 +185,9 @@ private:
     
     // 分片批处理函数
     void processShardBatch(size_t shard_index, const std::vector<TimePoint>& batch);
+
+    // 从WAL恢复数据
+    void recoverFromWAL();
 };
 
 } // namespace tsdb

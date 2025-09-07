@@ -1,6 +1,4 @@
 #include "tsdb/tsdb_writer.h"
-#include "tsdb/tsdb_generated.h"
-#include <flatbuffers/flatbuffers.h>
 #include <stdexcept>
 #include <iostream>
 #include <algorithm>
@@ -250,6 +248,8 @@ TSDBWriter::TSDBWriter(const std::string& path,
       batch_size_(batch_size),
       shard_count_(shard_count),
       merge_interval_(std::chrono::milliseconds(merge_interval_ms)) {
+
+    wal_.reset(new WALWriter(path, initial_size));
     
     // 确保基础目录存在
     std::filesystem::path dir_path(path);
@@ -290,15 +290,33 @@ TSDBWriter::TSDBWriter(const std::string& path,
     for (size_t i = 0; i < shard_count_; ++i) {
         shard_threads_[i] = std::thread(&TSDBWriter::shardProcessThread, this, i);
     }
+
+    recoverFromWAL();
 }
 
 TSDBWriter::~TSDBWriter() {
     close();
 }
 
+void TSDBWriter::recoverFromWAL() {
+    size_t recovered = wal_->recover([this](uint32_t shard_id, uint64_t timestamp, double value) {
+        if (shard_id < shard_count_) {
+            // 直接写入对应分片，绕过队列
+            shard_writers_[shard_id]->write(timestamp, value);
+        }
+    });
+    
+    if (recovered > 0) {
+        std::cout << "Recovered " << recovered << " points from WAL" << std::endl;
+    }
+}
+
 bool TSDBWriter::write(uint64_t timestamp, double value) {
     // 计算分片索引
     uint32_t shard_idx = getShardIndex(timestamp);
+
+    // 先写WAL
+    wal_->logPoint(shard_idx, timestamp, value);
     
     // 创建数据点
     TimePoint point{timestamp, value};
@@ -339,10 +357,16 @@ bool TSDBWriter::write_batch(const std::vector<TimePoint>& points) {
     for (size_t i = 0; i < shard_count_; ++i) {
         if (shard_points[i].empty()) continue;
         
+        // 先写WAL
+        wal_->logBatch(i, shard_points[i]);
+
         // 大批量直接写入，小批量放入队列
         if (shard_points[i].size() > batch_size_ / 2) {
             shard_writers_[i]->writeBatch(shard_points[i]);
             points_written_ += shard_points[i].size();
+
+            wal_->markProcessed(i, std::numeric_limits<uint64_t>::max());
+
         } else {
             for (const auto& point : shard_points[i]) {
                 int retry_count = 0;
@@ -435,6 +459,9 @@ void TSDBWriter::processShardBatch(size_t shard_index, const std::vector<TimePoi
     
     // 更新统计信息
     points_written_ += batch.size();
+
+    // 标记WAL处理进度
+    wal_->markProcessed(shard_index, std::numeric_limits<uint64_t>::max());
 }
 
 void TSDBWriter::flush() {
@@ -458,6 +485,9 @@ void TSDBWriter::close() {
         for (auto& writer : shard_writers_) {
             writer->close();
         }
+
+        // 关闭WAL
+        wal_->close();
     }
 }
 
