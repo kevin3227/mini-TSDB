@@ -2,8 +2,6 @@
 
 This project is a lightweight time series database storage engine built using **C++17**, **mmap**, and **FlatBuffers**, designed for IoT and monitoring use cases. It supports high-performance writes, time-range queries, and efficient compression using the **Delta-of-Delta** algorithm.
 
----
-
 ## 🚀 Features
 - **Sharded Architecture**: Distributes writes across multiple shards for high concurrency
 - **Hybrid Compression**: Combines Delta-of-Delta for timestamps with raw value storage
@@ -11,16 +9,12 @@ This project is a lightweight time series database storage engine built using **
 - **Batch Processing**: Optimized for both single and bulk writes
 - **Lock-Free Queues**: Minimizes contention between producer/consumer threads
 
----
-
 ## 🧰 Technologies Used
 - **C++20**: Leverages modern features like atomic smart pointers
 - **Memory Mapped Files**: Zero-copy file operations via `mmap`
 - **FlatBuffers v2.0**: Schema-based binary serialization
 - **Boost.Lockfree**: High-performance concurrent queues
 - **Delta-Delta Encoding**: Compresses timestamps with zigzag varint
-
----
 
 ## 📁 Project Structure
 
@@ -57,8 +51,6 @@ mini-TSDB/
 └── scripts/
     └── generate_flatbuffers.sh   // Script to generate FlatBuffers code
 ```
-
----
 
 ## 🛠️ Getting Started
 
@@ -97,8 +89,6 @@ make
 ./benchmark/benchmark
 ```
 
----
-
 ## 🧩 Future Enhancements
 
 - [ ] Add Prometheus Remote Write protocol support
@@ -106,8 +96,6 @@ make
 - [ ] Integrate eBPF for automatic metric collection
 - [ ] Support multiple time series per file (by ID/tags)
 - [ ] Add background compaction and garbage collection
-
----
 
 ## 📄 License
 
