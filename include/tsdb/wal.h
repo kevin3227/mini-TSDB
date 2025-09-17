@@ -41,6 +41,9 @@ public:
     
     // 获取某个shard的恢复点
     uint64_t getRecoveryPoint(uint32_t shard_id);
+
+    // 获取当前WAL写入位置
+    uint64_t getCurrentPosition();
     
     // 执行恢复操作，返回恢复的点数
     size_t recover(std::function<void(uint32_t, uint64_t, double)> point_handler);

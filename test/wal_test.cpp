@@ -17,7 +17,7 @@ std::string getTempFilePath() {
 void cleanupFiles(const std::string& path) {
     try {
         std::filesystem::remove(path + ".wal");
-        std::filesystem::remove(path + ".wal.meta");
+        std::filesystem::remove(path + ".checkpoint");
         
         // 清理分片文件
         for (int i = 0; i < 16; i++) {
@@ -253,11 +253,11 @@ TEST(WALIntegrationTest, BasicIntegration) {
     
     // 验证WAL文件和元数据文件已创建
     ASSERT_TRUE(std::filesystem::exists(path + ".wal"));
-    ASSERT_TRUE(std::filesystem::exists(path + ".wal.meta"));
+    ASSERT_TRUE(std::filesystem::exists(path + ".checkpoint"));
     
     // 清理
     std::filesystem::remove(path + ".wal");
-    std::filesystem::remove(path + ".wal.meta");
+    std::filesystem::remove(path + ".checkpoint");
     for (int i = 0; i < 4; i++) {
         std::filesystem::remove(path + ".shard" + std::to_string(i));
     }
@@ -309,7 +309,7 @@ TEST(WALIntegrationTest, RecoveryAfterCrash) {
     
     // 清理
     std::filesystem::remove(path + ".wal");
-    std::filesystem::remove(path + ".wal.meta");
+    std::filesystem::remove(path + ".checkpoint");
     for (int i = 0; i < 4; i++) {
         std::filesystem::remove(path + ".shard" + std::to_string(i));
     }

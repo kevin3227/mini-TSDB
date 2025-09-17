@@ -291,7 +291,7 @@ TSDBWriter::TSDBWriter(const std::string& path,
         shard_threads_[i] = std::thread(&TSDBWriter::shardProcessThread, this, i);
     }
 
-    recoverFromWAL();
+    // recoverFromWAL();
 }
 
 TSDBWriter::~TSDBWriter() {
@@ -365,7 +365,7 @@ bool TSDBWriter::write_batch(const std::vector<TimePoint>& points) {
             shard_writers_[i]->writeBatch(shard_points[i]);
             points_written_ += shard_points[i].size();
 
-            wal_->markProcessed(i, std::numeric_limits<uint64_t>::max());
+            wal_->markProcessed(i, wal_->getCurrentPosition());
 
         } else {
             for (const auto& point : shard_points[i]) {
@@ -454,14 +454,19 @@ void TSDBWriter::shardProcessThread(size_t shard_index) {
 void TSDBWriter::processShardBatch(size_t shard_index, const std::vector<TimePoint>& batch) {
     if (batch.empty()) return;
     
-    // 直接写入对应分片的写入器
+    // 先获取当前WAL位置
+    uint64_t current_wal_pos = wal_->getCurrentPosition();
+    
+    // 写入分片
     shard_writers_[shard_index]->writeBatch(batch);
     
-    // 更新统计信息
+    // 等待分片写入完成后再标记WAL处理进度
+    shard_writers_[shard_index]->flush();
+    
+    // 使用实际的WAL位置
+    wal_->markProcessed(shard_index, current_wal_pos);
+    
     points_written_ += batch.size();
-
-    // 标记WAL处理进度
-    wal_->markProcessed(shard_index, std::numeric_limits<uint64_t>::max());
 }
 
 void TSDBWriter::flush() {
@@ -483,6 +488,7 @@ void TSDBWriter::close() {
         
         // 刷新并关闭所有分片写入器
         for (auto& writer : shard_writers_) {
+            writer->flush();
             writer->close();
         }
 

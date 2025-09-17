@@ -80,41 +80,64 @@ uint64_t WALWriter::getRecoveryPoint(uint32_t shard_id) {
 }
 
 void WALWriter::writeCheckpoint() {
-    std::string meta_path = path_ + ".wal.meta";
-    std::ofstream meta_file(meta_path, std::ios::binary | std::ios::trunc);
+    std::string meta_path = path_ + ".checkpoint";
     
-    if (!meta_file) {
-        std::cerr << "Failed to open WAL metadata file for writing" << std::endl;
-        return;
+    try {
+        // 使用较小的初始大小，因为checkpoint文件通常很小
+        MMapFile checkpoint_file(meta_path, 4096, false);
+        
+        // 写入分片数量
+        uint32_t shard_count = shard_positions_.size();
+        checkpoint_file.append(&shard_count, sizeof(shard_count));
+        
+        // 写入所有分片位置数据
+        if (shard_count > 0) {
+            checkpoint_file.append(shard_positions_.data(), 
+                                  shard_count * sizeof(uint64_t));
+        }
+        
+        // MMapFile析构时会自动处理映射和同步
+    } catch (const std::exception& e) {
+        std::cerr << "Failed to write WAL checkpoint: " << e.what() << std::endl;
     }
-    
-    uint32_t shard_count = shard_positions_.size();
-    meta_file.write(reinterpret_cast<const char*>(&shard_count), sizeof(shard_count));
-    meta_file.write(reinterpret_cast<const char*>(shard_positions_.data()), 
-                   shard_count * sizeof(uint64_t));
-    
-    meta_file.close();
 }
 
 void WALWriter::readCheckpoint() {
-    std::string meta_path = path_ + ".wal.meta";
-    std::ifstream meta_file(meta_path, std::ios::binary);
+    std::string meta_path = path_ + ".checkpoint";
     
-    if (!meta_file) {
-        std::cout << "No WAL metadata file found, starting fresh" << std::endl;
-        return;
+    try {
+        // 尝试以只读方式打开检查点文件
+        MMapFile checkpoint_file(meta_path, 0, true);
+        
+        // 检查文件是否有足够数据
+        if (checkpoint_file.length() < sizeof(uint32_t)) {
+            return;  // 文件太小，没有有效数据
+        }
+        
+        // 读取分片数量
+        const uint8_t* data = checkpoint_file.data();
+        uint32_t shard_count = *reinterpret_cast<const uint32_t*>(data);
+        
+        // 验证数据完整性
+        size_t expected_size = sizeof(uint32_t) + shard_count * sizeof(uint64_t);
+        if (checkpoint_file.length() < expected_size) {
+            std::cerr << "Incomplete checkpoint file, expected " << expected_size 
+                      << " bytes but got " << checkpoint_file.length() << std::endl;
+            return;
+        }
+        
+        // 读取分片位置数据
+        if (shard_count > 0) {
+            shard_positions_.resize(shard_count);
+            memcpy(shard_positions_.data(), 
+                  data + sizeof(uint32_t), 
+                  shard_count * sizeof(uint64_t));
+        }
+        
+    } catch (const std::exception& e) {
+        // 文件可能不存在或损坏，这是正常的首次启动情况
+        // std::cout << "No valid WAL checkpoint found, starting fresh" << std::endl;
     }
-    
-    uint32_t shard_count;
-    meta_file.read(reinterpret_cast<char*>(&shard_count), sizeof(shard_count));
-    
-    if (shard_count > 0) {
-        shard_positions_.resize(shard_count);
-        meta_file.read(reinterpret_cast<char*>(shard_positions_.data()), 
-                      shard_count * sizeof(uint64_t));
-    }
-    
-    meta_file.close();
 }
 
 size_t WALWriter::recover(std::function<void(uint32_t, uint64_t, double)> point_handler) {
@@ -249,6 +272,11 @@ size_t WALWriter::recover(std::function<void(uint32_t, uint64_t, double)> point_
     
     // std::cout << "WAL recovery completed, recovered " << recovered_points << " points" << std::endl;
     return recovered_points;
+}
+
+uint64_t WALWriter::getCurrentPosition() {
+    std::lock_guard<std::mutex> lock(wal_mutex_);
+    return wal_file_.length();
 }
 
 void WALWriter::close() {
