@@ -1,11 +1,5 @@
 #include "tsdb/tsdb_writer.h"
-#include <stdexcept>
-#include <iostream>
-#include <algorithm>
-#include <chrono>
-#include <boost/align/aligned_allocator.hpp>
-#include <sstream>
-#include <filesystem>
+#include "tsdb/tsdb_pch.h"
 
 namespace tsdb {
 
@@ -242,13 +236,13 @@ TSDBWriter::TSDBWriter(const std::string& path,
                       size_t batch_size,
                       size_t queue_capacity,
                       size_t merge_interval_ms,
-                      size_t shard_count)
+                      size_t shard_count,
+                      bool enable_monitoring)
     : base_path_(path),
       compress_(compress),
       batch_size_(batch_size),
       shard_count_(shard_count),
       merge_interval_(std::chrono::milliseconds(merge_interval_ms)) {
-
     wal_.reset(new WALWriter(path, initial_size));
     
     // 确保基础目录存在
@@ -280,7 +274,7 @@ TSDBWriter::TSDBWriter(const std::string& path,
         // 创建分片写入器
         shard_writers_[i].reset(new ShardWriter(
             shard_path.str(), 
-            initial_size / shard_count_,  // 均分初始大小
+            initial_size / shard_count_,
             compress, 
             batch_size));
     }
@@ -290,11 +284,20 @@ TSDBWriter::TSDBWriter(const std::string& path,
     for (size_t i = 0; i < shard_count_; ++i) {
         shard_threads_[i] = std::thread(&TSDBWriter::shardProcessThread, this, i);
     }
-
     // recoverFromWAL();
+    
+    // 初始化性能监控器（如果启用）
+    if (enable_monitoring) {
+        monitor_ = std::make_unique<PerformanceMonitor>(this);
+        monitor_->start();
+    }
 }
 
 TSDBWriter::~TSDBWriter() {
+    if (monitor_) {
+        monitor_->stop();
+    }
+
     close();
 }
 
@@ -469,6 +472,24 @@ void TSDBWriter::processShardBatch(size_t shard_index, const std::vector<TimePoi
     points_written_ += batch.size();
 }
 
+// // 获取队列大小
+// std::vector<size_t> TSDBWriter::getQueueSizes() const {
+//     std::vector<size_t> sizes(shard_count_);
+//     for (size_t i = 0; i < shard_count_; ++i) {
+//         sizes[i] = shard_queues_[i]->read_available();
+//     }
+//     return sizes;
+// }
+
+// 获取分片写入点数
+std::vector<size_t> TSDBWriter::getShardPointsWritten() const {
+    std::vector<size_t> points(shard_count_);
+    for (size_t i = 0; i < shard_count_; ++i) {
+        points[i] = shard_writers_[i]->getPointsWritten();
+    }
+    return points;
+}
+
 void TSDBWriter::flush() {
     // 刷新所有分片写入器
     for (auto& writer : shard_writers_) {
@@ -494,6 +515,140 @@ void TSDBWriter::close() {
 
         // 关闭WAL
         wal_->close();
+    }
+}
+
+// PerformanceMonitor 实现
+PerformanceMonitor::PerformanceMonitor(TSDBWriter* writer)
+    : writer_(writer) {
+    // 初始化上次指标 - 确保向量大小正确
+    last_metrics_.timestamp = std::chrono::steady_clock::now();
+    last_metrics_.points_written = 0;
+    last_metrics_.queue_full_count = 0;
+    last_metrics_.flushes = 0;
+    last_metrics_.shard_points.resize(writer_->getShardCount(), 0);
+    
+    // 立即获取当前状态作为基线
+    last_metrics_.points_written = writer_->getTotalPointsWritten();
+    last_metrics_.queue_full_count = writer_->getQueueFullCount();
+    last_metrics_.flushes = writer_->getFlushCount();
+    last_metrics_.shard_points = writer_->getShardPointsWritten();
+}
+
+PerformanceMonitor::~PerformanceMonitor() {
+    stop();
+}
+
+void PerformanceMonitor::start() {
+    if (running_) return;
+    
+    running_ = true;
+    
+    // 启动监控线程
+    monitor_thread_ = std::thread(&PerformanceMonitor::monitorThread, this);
+}
+
+void PerformanceMonitor::stop() {
+    if (!running_) return;
+    
+    running_ = false;
+    
+    if (monitor_thread_.joinable()) {
+        monitor_thread_.join();
+    }
+}
+
+void PerformanceMonitor::monitorThread() {
+    // 等待第一次数据收集
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    
+    while (running_) {
+        // 获取当前指标
+        Metrics current;
+        current.timestamp = std::chrono::steady_clock::now();
+        current.points_written = writer_->getTotalPointsWritten();
+        current.queue_full_count = writer_->getQueueFullCount();
+        current.flushes = writer_->getFlushCount();
+        current.shard_points = writer_->getShardPointsWritten();
+        
+        // 计算时间差（秒）
+        auto time_diff_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            current.timestamp - last_metrics_.timestamp).count();
+        
+        double time_diff = time_diff_ms / 1000.0;
+        
+        // 避免除零错误
+        if (time_diff <= 0.0) {
+            time_diff = 1.0;  // 设置最小时间差为1秒
+        }
+        
+        // 计算写入速率（点/秒）
+        double write_rate = 0.0;
+        if (current.points_written >= last_metrics_.points_written) {
+            write_rate = (current.points_written - last_metrics_.points_written) / time_diff;
+        }
+        
+        // 计算队列满增长率
+        double queue_full_rate = 0.0;
+        if (current.queue_full_count >= last_metrics_.queue_full_count) {
+            queue_full_rate = (current.queue_full_count - last_metrics_.queue_full_count) / time_diff;
+        }
+        
+        // 计算刷新率
+        double flush_rate = 0.0;
+        if (current.flushes >= last_metrics_.flushes) {
+            flush_rate = (current.flushes - last_metrics_.flushes) / time_diff;
+        }
+        
+        // 清屏并显示信息
+        std::cout << "\033[2J\033[1;1H";  // ANSI 清屏和光标定位到开始
+        
+        // 显示标题
+        std::cout << "TSDB Writer Performance Monitor" << std::endl;
+        std::cout << "===========================================================" << std::endl;
+        std::cout << "Time: " << time_diff_ms << "ms since last update" << std::endl;
+        std::cout << std::endl;
+        
+        // 显示全局指标
+        std::cout << "Total Points Written: " << current.points_written 
+                  << " (" << std::fixed << std::setprecision(2) << write_rate << " points/s)" << std::endl;
+                  
+        // std::cout << "Queue Full Count: " << current.queue_full_count 
+        //           << " (" << std::fixed << std::setprecision(2) << queue_full_rate << " /s)" << std::endl;
+                  
+        // std::cout << "Flush Count: " << current.flushes 
+        //           << " (" << std::fixed << std::setprecision(2) << flush_rate << " /s)" << std::endl;
+        
+        // 显示分片指标
+        std::cout << std::endl << "Shard Statistics:" << std::endl;
+        std::cout << "-------------------------------------------------------" << std::endl;
+        std::cout << "Shard ID | Points Written | Write Rate" << std::endl;
+        std::cout << "-------------------------------------------------------" << std::endl;
+        
+        for (size_t i = 0; i < writer_->getShardCount(); ++i) {
+            double shard_rate = 0.0;
+            if (i < current.shard_points.size() && i < last_metrics_.shard_points.size()) {
+                if (current.shard_points[i] >= last_metrics_.shard_points[i]) {
+                    shard_rate = (current.shard_points[i] - last_metrics_.shard_points[i]) / time_diff;
+                }
+            }
+            
+            size_t shard_points = (i < current.shard_points.size()) ? current.shard_points[i] : 0;
+            
+            std::cout << std::setw(8) << i << " | " 
+                      << std::setw(14) << shard_points << " | " 
+                      << std::setw(10) << std::fixed << std::setprecision(2) << shard_rate << " /s" << std::endl;
+        }
+        
+        // 显示帮助信息
+        std::cout << std::endl << "Press Ctrl+C to exit" << std::endl;
+        std::cout << "Time diff: " << std::fixed << std::setprecision(3) << time_diff << "s" << std::endl;
+        
+        // 保存当前指标作为下次计算基础
+        last_metrics_ = current;
+        
+        // 等待1秒
+        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 }
 

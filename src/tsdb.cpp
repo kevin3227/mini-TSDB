@@ -1,18 +1,17 @@
-#include "tsdb/tsdb.h"
-#include "tsdb/mmap_file.h"
-#include "tsdb/delta_delta.h"
+// #include "tsdb/tsdb.h"
+// #include "tsdb/tsdb_pch.h"
 
-namespace tsdb {
+// namespace tsdb {
 
-TSDB::TSDB(const std::string& path) {
-    file_ = new MMapFile(path);
-    encoder_ = new DeltaDeltaEncoder();
-}
+// TSDB::TSDB(const std::string& path) {
+//     file_ = new MMapFile(path);
+//     encoder_ = new DeltaDeltaEncoder();
+// }
 
-TSDB::~TSDB() {
-    delete file_;
-    delete encoder_;
-}
+// TSDB::~TSDB() {
+//     delete file_;
+//     delete encoder_;
+// }
 
 // void TSDB::append(uint64_t timestamp, double value) {
 //     encoder_->addTimestamp(timestamp);
@@ -23,4 +22,4 @@ TSDB::~TSDB() {
 //     // TODO: Read from mmap and decode
 //     return {};
 // }
-}
+// }

@@ -1,8 +1,5 @@
 #include "tsdb/tsdb_reader.h"
-#include "tsdb/tsdb_generated.h"
-#include <flatbuffers/flatbuffers.h>
-#include <iostream>
-#include <algorithm>
+#include "tsdb/tsdb_pch.h"
 
 namespace tsdb {
 

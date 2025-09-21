@@ -3,15 +3,15 @@
 #include <mutex>
 #include <thread>
 #include <atomic>
+#include <string>
+#include <chrono>
+#include <condition_variable>
+#ifndef _WIN32
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <stdexcept>
-#include <system_error>
-#include <cstring>
-#include <iostream>
-#include <condition_variable>
+#endif
 
 namespace tsdb {
 

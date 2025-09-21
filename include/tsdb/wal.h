@@ -2,9 +2,6 @@
 
 #include "tsdb/mmap_file.h"
 #include <vector>
-#include <string>
-#include <atomic>
-#include <mutex>
 #include <functional>
 
 namespace tsdb {

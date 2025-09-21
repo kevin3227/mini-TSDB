@@ -147,7 +147,7 @@ static void BM_MultiThreadWrite(benchmark::State& state) {
         std::unique_ptr<tsdb::TSDBWriter> writer;
         if (num_shards > 1) {
             writer = std::make_unique<tsdb::TSDBWriter>(
-                file_path, 1 << 24, compressed, 1000, 50000, 100, num_shards);
+                file_path, 1 << 24, compressed, 1000, 50000, 100, num_shards, false);
         } else {
             writer = std::make_unique<tsdb::TSDBWriter>(
                 file_path, 1 << 24, compressed);

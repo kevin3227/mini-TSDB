@@ -1,6 +1,5 @@
 #include "tsdb/delta_delta.h"
-#include <cassert>
-#include <iostream>
+#include "tsdb/tsdb_pch.h"
 
 namespace tsdb {
 

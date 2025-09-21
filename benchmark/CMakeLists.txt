@@ -1,48 +1,37 @@
 cmake_minimum_required(VERSION 3.12)
 project(tsdb_benchmark)
 
-# 启用C++17标准
+# Enable C++17 standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# 查找Google Benchmark库
+# Find Google Benchmark library
 find_package(benchmark REQUIRED)
-find_package(Threads REQUIRED)
 find_package(TBB REQUIRED)
 
-# 包含目录设置
+# Include directories
 include_directories(
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include  # 项目头文件
-    ${CMAKE_CURRENT_SOURCE_DIR}              # 当前目录的头文件
-)
-
-# 添加benchmark可执行文件
-add_executable(benchmark 
-    ../benchmark/tsdb_benchmark.cpp
-    ../src/tsdb.cpp
-    ../src/mmap_file.cpp
-    ../src/delta_delta.cpp
-    ../src/tsdb_writer.cpp
-    ../src/tsdb_reader.cpp
-    ../src/wal.cpp
-)
-
-# 设置目标属性
-target_include_directories(benchmark PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-# 链接依赖库
+# Add benchmark executable
+add_executable(benchmark ../benchmark/tsdb_benchmark.cpp)
+
+# Set target properties
+target_include_directories(benchmark PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
+
+# Link dependencies
 target_link_libraries(benchmark PRIVATE
+    tsdb_core
     benchmark::benchmark
     benchmark::benchmark_main
-    ${CMAKE_THREAD_LIBS_INIT}
     flatbuffers
     TBB::tbb
 )
 
-# 可选的编译器优化（非调试模式）
+# Optional compiler optimizations (non-debug mode)
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_options(benchmark PRIVATE
         -O3

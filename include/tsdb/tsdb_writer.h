@@ -17,6 +17,10 @@
 #include <filesystem>
 #include <unordered_map>
 #include <functional>
+#include <chrono>
+#include <sstream>
+#include <iomanip>
+#include <thread>
 
 namespace tsdb {
 
@@ -123,6 +127,9 @@ private:
     void writeCompressed(uint64_t timestamp, double value);
 };
 
+// 前向声明
+class PerformanceMonitor;
+
 class TSDBWriter {
 public:
     // 构造函数：打开或创建 mmap 文件，并启动后台处理线程
@@ -132,7 +139,8 @@ public:
                         size_t batch_size = 10000,
                         size_t queue_capacity = 100000,
                         size_t merge_interval_ms = 100,
-                        size_t shard_count = 8);  // 新增分片数参数
+                        size_t shard_count = 8,
+                        bool enable_monitoring = true);
 
     // 析构函数：确保安全关闭
     ~TSDBWriter();
@@ -148,6 +156,24 @@ public:
 
     // 关闭并持久化数据
     void close();
+    
+    // 获取队列大小
+    // std::vector<size_t> getQueueSizes() const;
+    
+    // 获取分片写入点数
+    std::vector<size_t> getShardPointsWritten() const;
+    
+    // 获取写入点总数
+    size_t getTotalPointsWritten() const { return points_written_; }
+    
+    // 获取队列满计数
+    size_t getQueueFullCount() const { return queue_full_count_; }
+    
+    // 获取刷新次数
+    size_t getFlushCount() const { return flushes_; }
+    
+    // 获取分片数
+    size_t getShardCount() const { return shard_count_; }
 
 private:
     std::string base_path_; // 基本路径，用于构造分片文件路径
@@ -180,6 +206,9 @@ private:
     // 运行标志
     std::atomic<bool> running_{true};
     
+    // 性能监控器
+    std::unique_ptr<PerformanceMonitor> monitor_;
+    
     // 分片处理线程主函数
     void shardProcessThread(size_t shard_index);
     
@@ -188,6 +217,43 @@ private:
 
     // 从WAL恢复数据
     void recoverFromWAL();
+};
+
+// 性能监控类 - 在TSDBWriter定义之后
+class PerformanceMonitor {
+public:
+    // 构造函数
+    explicit PerformanceMonitor(TSDBWriter* writer);
+    
+    // 析构函数
+    ~PerformanceMonitor();
+    
+    // 启动监控线程
+    void start();
+    
+    // 停止监控线程
+    void stop();
+    
+private:
+    // 监控线程主函数
+    void monitorThread();
+    
+    // 性能指标
+    struct Metrics {
+        std::chrono::time_point<std::chrono::steady_clock> timestamp;
+        size_t points_written;
+        size_t queue_full_count;
+        size_t flushes;
+        // std::vector<size_t> queue_sizes;
+        std::vector<size_t> shard_points;
+    };
+    
+    TSDBWriter* writer_;
+    std::thread monitor_thread_;
+    std::atomic<bool> running_{false};
+    
+    // 缓存上次的指标，用于计算速率
+    Metrics last_metrics_;
 };
 
 } // namespace tsdb

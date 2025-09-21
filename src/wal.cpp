@@ -1,6 +1,5 @@
 #include "tsdb/wal.h"
-#include <iostream>
-#include <fstream>
+#include "tsdb/tsdb_pch.h"
 
 namespace tsdb {
 

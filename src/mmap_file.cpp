@@ -1,4 +1,5 @@
 #include "tsdb/mmap_file.h"
+#include "tsdb/tsdb_pch.h"
 
 namespace tsdb {
 
