@@ -11,7 +11,19 @@
 
 namespace fs = std::filesystem;
 
-// 测试数据生成工具
+class PrecisionTimer {
+public:
+    void start() { start_time = std::chrono::high_resolution_clock::now(); }
+    
+    double stop() {
+        auto end_time = std::chrono::high_resolution_clock::now();
+        return std::chrono::duration<double>(end_time - start_time).count();
+    }
+    
+private:
+    std::chrono::time_point<std::chrono::high_resolution_clock> start_time;
+};
+
 class TestDataGenerator {
 public:
     TestDataGenerator(uint64_t start_ts, uint64_t end_ts, double min_val, double max_val, uint64_t seed = 0)
@@ -26,11 +38,20 @@ public:
         return {ts, val};
     }
     
-    // 生成连续的时间戳（用于模拟顺序写入）
     std::pair<uint64_t, double> generateSequential(uint64_t offset) {
         uint64_t ts = start_ts_ + offset;
         double val = val_dist_(gen_);
         return {ts, val};
+    }
+
+    // 预生成批量数据减少运行时开销
+    std::vector<std::pair<uint64_t, double>> generateBatch(size_t count) {
+        std::vector<std::pair<uint64_t, double>> batch;
+        batch.reserve(count);
+        for (size_t i = 0; i < count; ++i) {
+            batch.push_back(generateSequential(i));
+        }
+        return batch;
     }
 
 private:
@@ -63,61 +84,31 @@ std::vector<std::pair<uint64_t, double>> mergeResults(
     return merged;
 }
 
-// 查找所有分片文件并执行查询
-std::vector<std::pair<uint64_t, double>> queryAllShards(
-    const std::string& base_path, uint64_t start_ts, uint64_t end_ts) {
-    
-    std::vector<std::string> shard_paths;
-    shard_paths.push_back(base_path); // 添加主文件（如果存在）
-    
-    // 查找所有分片文件
-    for (int i = 0; ; i++) {
-        std::string shard_path = base_path + ".shard" + std::to_string(i);
-        if (fs::exists(shard_path)) {
-            shard_paths.push_back(shard_path);
-        } else if (i > 0 || !fs::exists(base_path)) {
-            // 找不到更多分片，或者主文件不存在
-            break;
-        }
-    }
-    
-
-    // 为空的话退出
-    if (shard_paths.empty() || 
-        (shard_paths.size() == 1 && !fs::exists(shard_paths[0]))) {
-        return {};
-    }
-    
-    // 从每个分片读取数据
-    std::vector<std::vector<std::pair<uint64_t, double>>> shard_results;
-    for (const auto& path : shard_paths) {
-        if (fs::exists(path)) {
-            try {
-                tsdb::TSDBReader reader(path);
-                auto points = reader.query(start_ts, end_ts);
-                if (!points.empty()) {
-                    shard_results.push_back(std::move(points));
-                }
-            } catch (const std::exception&) {
-                // 忽略读取错误，继续处理其他分片
-            }
-        }
-    }
-    
-    // 合并结果
-    return mergeResults(shard_results);
-}
-
 // 清理所有分片文件
 void cleanupShardFiles(const std::string& base_path, int max_shards = 32) {
     if (fs::exists(base_path)) {
         fs::remove(base_path);
     }
     
+    std::string wal_path = base_path + ".wal";
+    if (fs::exists(wal_path)) {
+        fs::remove(wal_path);
+    }
+    
+    std::string checkpoint_path = base_path + ".checkpoint";
+    if (fs::exists(checkpoint_path)) {
+        fs::remove(checkpoint_path);
+    }
+    
     for (int i = 0; i < max_shards; i++) {
         std::string shard_path = base_path + ".shard" + std::to_string(i);
         if (fs::exists(shard_path)) {
             fs::remove(shard_path);
+        }
+        
+        std::string shard_wal = shard_path + ".wal";
+        if (fs::exists(shard_wal)) {
+            fs::remove(shard_wal);
         }
     }
 }
@@ -128,22 +119,29 @@ static void BM_MultiThreadWrite(benchmark::State& state) {
     const size_t num_threads = state.range(1);
     const bool compressed = state.range(2) != 0;
     const size_t num_shards = state.range(3);
-    const std::string file_path = "/tmp/tsdb_sharded_bench_" + 
-                                 std::to_string(num_shards) + ".data";
+    const std::string file_path = "./tsdb_sharded_bench_" + 
+                                 std::to_string(num_shards) + "_" +
+                                 std::to_string(num_threads) + ".data";
     
-    // 点数必须能被线程数整除
+    // 预生成所有测试数据（排除生成时间影响）
+    std::vector<std::vector<std::pair<uint64_t, double>>> thread_data(num_threads);
     const size_t points_per_thread = num_points / num_threads;
-    if (num_points % num_threads != 0) {
-        state.SkipWithError("Points count must be divisible by thread count");
-        return;
-    }
     
+    // 使用高精度定时器
+    PrecisionTimer timer;
+    double total_write_time = 0.0;
+    size_t total_bytes_written = 0;
+    
+    for (size_t t = 0; t < num_threads; ++t) {
+        TestDataGenerator gen(1609459200000, 1609545600000, 0.0, 100.0, t);
+        thread_data[t] = gen.generateBatch(points_per_thread);
+    }
+
     for (auto _ : state) {
-        state.PauseTiming();
-        // 清理旧文件
+        // 清理旧文件（不计时）
         cleanupShardFiles(file_path, num_shards);
         
-        // 创建写入器（单文件或分片模式）
+        // 创建写入器（不计时）
         std::unique_ptr<tsdb::TSDBWriter> writer;
         if (num_shards > 1) {
             writer = std::make_unique<tsdb::TSDBWriter>(
@@ -155,29 +153,33 @@ static void BM_MultiThreadWrite(benchmark::State& state) {
         
         std::vector<std::thread> threads;
         std::atomic<size_t> total_written{0};
-        state.ResumeTiming();
+        std::atomic<size_t> bytes_written{0};
+        
+        // 精确计时开始
+        timer.start();
         
         // 启动写入线程
         for (size_t t = 0; t < num_threads; ++t) {
-            threads.emplace_back([&, thread_id = t]() {
-                // 使用线程ID作为随机种子，确保每个线程生成不同的数据
-                TestDataGenerator gen(
-                    1609459200000, 1609545600000, 0.0, 100.0, thread_id);
+            threads.emplace_back([&, t, batch_data = std::ref(thread_data[t])]() {
+                const size_t batch_size = 1000;
+                auto& data = batch_data.get();
                 
-                // 每批写入的点数
-                const size_t batch_size = 100;
-                std::vector<tsdb::TimePoint> batch;
-                batch.reserve(batch_size);
-                
-                for (size_t i = 0; i < points_per_thread; ++i) {
-                    auto [ts, val] = gen.generateSequential(i * num_threads + thread_id);
-                    batch.push_back({ts, val});
+                for (size_t i = 0; i < data.size(); i += batch_size) {
+                    auto start = data.begin() + i;
+                    auto end = (i + batch_size < data.size()) 
+                             ? start + batch_size : data.end();
+                             
+                    std::vector<tsdb::TimePoint> batch;
+                    batch.reserve(batch_size);
+                    std::transform(start, end, std::back_inserter(batch),
+                        [](const auto& p) {
+                            return tsdb::TimePoint{p.first, p.second};
+                        });
                     
-                    if (batch.size() >= batch_size || i == points_per_thread - 1) {
-                        if (writer->write_batch(batch)) {
-                            total_written += batch.size();
-                        }
-                        batch.clear();
+                    if (writer->write_batch(batch)) {
+                        total_written += batch.size();
+                        // 计算实际写入字节：每个点=8字节时间戳 + 8字节值
+                        bytes_written += batch.size() * (sizeof(uint64_t) + sizeof(double));
                     }
                 }
             });
@@ -188,33 +190,50 @@ static void BM_MultiThreadWrite(benchmark::State& state) {
             t.join();
         }
         
+        // 刷新并关闭写入器（计入写入时间）
+        writer->flush();
         writer->close();
         
-        // 验证写入点数
+        // 精确计时结束
+        double elapsed = timer.stop();
+        total_write_time += elapsed;
+        
+        // 验证写入完整性
         if (total_written != num_points) {
-            state.SkipWithError("Failed to write all points");
+            state.SkipWithError("Point count mismatch");
+            cleanupShardFiles(file_path, num_shards);
             return;
         }
+        
+        total_bytes_written += bytes_written.load();
     }
     
-    // 统计指标
-    state.SetItemsProcessed(state.iterations() * num_points);
-    state.SetBytesProcessed(state.iterations() * num_points * (sizeof(double) + sizeof(uint64_t)));
+    // 计算并报告精确吞吐量指标
+    const double avg_time = total_write_time / state.iterations();
+    const double points_per_sec = num_points / avg_time;
+    const double mb_per_sec = (total_bytes_written / state.iterations()) / (1024 * 1024) / avg_time;
     
-    // 清理文件
+    state.counters["Points/s"] = benchmark::Counter(points_per_sec, benchmark::Counter::kIsRate);
+    // state.counters["MB/s"] = benchmark::Counter(mb_per_sec, benchmark::Counter::kIsRate);
+    // state.counters["Latency"] = benchmark::Counter(avg_time * 1000, benchmark::Counter::kAvgThreads);
+    
+    // state.SetItemsProcessed(state.iterations() * num_points);
+    // state.SetBytesProcessed(total_bytes_written);
+    
+    // 最终清理
     cleanupShardFiles(file_path, num_shards);
 }
 
 // 注册基准测试
 BENCHMARK(BM_MultiThreadWrite)
-    ->Args({1000000, 2, 1, 2})
-    ->Args({1000000, 2, 1, 4})
-    ->Args({1000000, 4, 1, 2})
-    ->Args({1000000, 4, 1, 4})
-    ->Args({1000000, 8, 1, 2})
-    ->Args({1000000, 8, 1, 4})
-    ->Args({1000000, 16, 1, 2})
-    ->Args({1000000, 16, 1, 4})
+    ->ArgsProduct({
+        {1000000},        // 点数
+        {2, 4, 8, 16},    // 线程数
+        {1},              // 压缩启用
+        {1, 2, 4, 8}      // 分片数
+    })
+    ->MeasureProcessCPUTime()
+    ->UseRealTime()
     ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_MAIN();

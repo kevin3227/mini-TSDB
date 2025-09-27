@@ -27,6 +27,9 @@ namespace tsdb {
 // 自定义内存分配器
 class MemoryPool {
 public:
+    static constexpr size_t BITS_PER_BLOCK = 64;
+    static constexpr size_t BLOCKS_PER_UINT64 = sizeof(uint64_t) * 8;
+
     static constexpr size_t SMALL_BLOCK_SIZE = 256;      // 小块大小
     static constexpr size_t MEDIUM_BLOCK_SIZE = 4096;    // 中块大小
     static constexpr size_t LARGE_BLOCK_SIZE = 32768;    // 大块大小
@@ -53,16 +56,28 @@ public:
     
 private:
     // 内存块结构
-    struct MemoryBlock {
-        void* data;
-        bool used;
+    struct MemoryPoolBlock {
+        void* base_ptr = nullptr;    // 整个内存池起始地址
+        size_t block_size = 0;        // 每个块的大小
+        size_t block_count = 0;        // 总块数
+        size_t free_blocks = 0;        // 空闲块数
+        
+        // 位图管理
+        std::vector<uint64_t> bitmap;
+        
+        // 空闲块索引数组
+        std::vector<size_t> free_list;
     };
 
-    // 不同大小的内存块池
-    std::vector<MemoryBlock> small_blocks_;
-    std::vector<MemoryBlock> medium_blocks_;
-    std::vector<MemoryBlock> large_blocks_;
+    MemoryPoolBlock small_blocks_;   // 小块内存池
+    MemoryPoolBlock medium_blocks_;  // 中块内存池
+    MemoryPoolBlock large_blocks_;   // 大块内存池
     
+    void initPool(MemoryPoolBlock& pool, size_t count, size_t size);
+    void releasePool(MemoryPoolBlock& pool);
+    void* allocateFromPool(MemoryPoolBlock& pool);
+    void deallocateFromPool(MemoryPoolBlock& pool, void* ptr);
+
     // 统计计数器
     std::atomic<size_t> allocation_count_{0};
     std::atomic<size_t> hit_count_{0};

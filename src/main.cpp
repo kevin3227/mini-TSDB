@@ -6,10 +6,10 @@
 int main() {
     try {
         // 销毁旧的测试数据目录
-        std::filesystem::remove_all("/tmp/test_tsdb");
+        std::filesystem::remove_all("./test_tsdb");
         
         // 创建带监控的TSDB写入器
-        tsdb::TSDBWriter writer("/tmp/test_tsdb", 1<<20, true, 1000, 10000, 100, 4, true);
+        tsdb::TSDBWriter writer("./test_tsdb", 1<<20, true, 1000, 10000, 100, 4, true);
         
         // std::cout << "开始写入数据，监控将在1秒后开始显示..." << std::endl;
         std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -18,7 +18,7 @@ int main() {
         uint64_t timestamp = 1000000;
         for (int batch = 0; batch < 100; ++batch) {
             std::vector<tsdb::TimePoint> points;
-            for (int i = 0; i < 1000; ++i) {
+            for (int i = 0; i < 100000; ++i) {
                 points.push_back({timestamp++, static_cast<double>(rand()) / RAND_MAX});
             }
             

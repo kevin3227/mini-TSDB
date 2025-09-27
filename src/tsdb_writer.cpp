@@ -5,110 +5,134 @@ namespace tsdb {
 
 // MemoryPool 实现
 MemoryPool::MemoryPool() {
-    // 分配小块内存
-    small_blocks_.resize(SMALL_BLOCKS_COUNT);
-    for (auto& block : small_blocks_) {
-        block.data = aligned_alloc(64, SMALL_BLOCK_SIZE); // 缓存行对齐
-        block.used = false;
-    }
-
-    // 分配中块内存
-    medium_blocks_.resize(MEDIUM_BLOCKS_COUNT);
-    for (auto& block : medium_blocks_) {
-        block.data = aligned_alloc(64, MEDIUM_BLOCK_SIZE);
-        block.used = false;
-    }
-
-    // 分配大块内存
-    large_blocks_.resize(LARGE_BLOCKS_COUNT);
-    for (auto& block : large_blocks_) {
-        block.data = aligned_alloc(64, LARGE_BLOCK_SIZE);
-        block.used = false;
-    }
+    // 小块分配器初始化
+    initPool(small_blocks_, SMALL_BLOCKS_COUNT, SMALL_BLOCK_SIZE);
+    // 中块分配器初始化
+    initPool(medium_blocks_, MEDIUM_BLOCKS_COUNT, MEDIUM_BLOCK_SIZE);
+    // 大块分配器初始化
+    initPool(large_blocks_, LARGE_BLOCKS_COUNT, LARGE_BLOCK_SIZE);
 }
 
 MemoryPool::~MemoryPool() {
     // 释放所有内存块
-    for (auto& block : small_blocks_) {
-        free(block.data);
-    }
-    
-    for (auto& block : medium_blocks_) {
-        free(block.data);
-    }
-    
-    for (auto& block : large_blocks_) {
-        free(block.data);
-    }
+    releasePool(small_blocks_);
+    releasePool(medium_blocks_);
+    releasePool(large_blocks_);
 }
 
 void* MemoryPool::allocate(size_t size) {
     allocation_count_++;
-    std::lock_guard<std::mutex> lock(pool_mutex_);
-
-    // 根据请求大小选择合适的内存块
+    
+    // 根据大小选择分配池
     if (size <= SMALL_BLOCK_SIZE) {
-        for (auto& block : small_blocks_) {
-            if (!block.used) {
-                block.used = true;
-                hit_count_++;
-                return block.data;
-            }
-        }
+        return allocateFromPool(small_blocks_);
     } 
     else if (size <= MEDIUM_BLOCK_SIZE) {
-        for (auto& block : medium_blocks_) {
-            if (!block.used) {
-                block.used = true;
-                hit_count_++;
-                return block.data;
-            }
-        }
+        return allocateFromPool(medium_blocks_);
     }
     else if (size <= LARGE_BLOCK_SIZE) {
-        for (auto& block : large_blocks_) {
-            if (!block.used) {
-                block.used = true;
-                hit_count_++;
-                return block.data;
-            }
-        }
+        return allocateFromPool(large_blocks_);
     }
-
-    // 池中没有合适大小的块，回退到标准分配
+    
+    // 过大内存直接分配
     miss_count_++;
     return ::malloc(size);
 }
 
 void MemoryPool::deallocate(void* ptr, size_t size) {
+    // 根据大小选择释放池
+    if (size <= SMALL_BLOCK_SIZE) {
+        deallocateFromPool(small_blocks_, ptr);
+    }
+    else if (size <= MEDIUM_BLOCK_SIZE) {
+        deallocateFromPool(medium_blocks_, ptr);
+    }
+    else if (size <= LARGE_BLOCK_SIZE) {
+        deallocateFromPool(large_blocks_, ptr);
+    }
+    else {
+        ::free(ptr);  // 非池内存直接释放
+    }
+}
+
+// 初始化内存池
+void MemoryPool::initPool(MemoryPoolBlock& pool, size_t count, size_t size) {
+    // 计算内存池总大小
+    size_t total_size = size * count;
+    
+    // 分配对齐的内存
+    pool.base_ptr = aligned_alloc(64, total_size);
+    pool.block_size = size;
+    pool.block_count = count;
+    pool.free_blocks = count;
+    
+    // 初始化位图 (每64块使用一个uint64管理)
+    size_t bitmap_size = (count + BLOCKS_PER_UINT64 - 1) / BLOCKS_PER_UINT64;
+    pool.bitmap.resize(bitmap_size, 0);
+    
+    // 初始化空闲列表
+    pool.free_list.reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+        pool.free_list.push_back(i);
+    }
+}
+
+// 释放内存池
+void MemoryPool::releasePool(MemoryPoolBlock& pool) {
+    if (pool.base_ptr) {
+        ::free(pool.base_ptr);
+        pool.base_ptr = nullptr;
+    }
+    pool.free_list.clear();
+    pool.bitmap.clear();
+}
+
+// 从指定池分配内存
+void* MemoryPool::allocateFromPool(MemoryPoolBlock& pool) {
     std::lock_guard<std::mutex> lock(pool_mutex_);
     
-    // 查找并标记为未使用
-    auto check_pool = [ptr](std::vector<MemoryBlock>& blocks) -> bool {
-        for (auto& block : blocks) {
-            if (block.data == ptr) {
-                block.used = false;
-                return true;
-            }
-        }
-        return false;
-    };
-    
-    // 检查小块池
-    if (size <= SMALL_BLOCK_SIZE) {
-        if (check_pool(small_blocks_)) return;
-    }
-    // 检查中块池
-    else if (size <= MEDIUM_BLOCK_SIZE) {
-        if (check_pool(medium_blocks_)) return;
-    }
-    // 检查大块池
-    else if (size <= LARGE_BLOCK_SIZE) {
-        if (check_pool(large_blocks_)) return;
+    if (pool.free_blocks == 0) {
+        miss_count_++;
+        return nullptr;  // 池已耗尽
     }
     
-    // 不是池中的内存，释放
-    ::free(ptr);
+    // 使用空闲列表快速获取空闲块索引
+    size_t block_index = pool.free_list.back();
+    pool.free_list.pop_back();
+    pool.free_blocks--;
+    
+    // 设置位图中对应的位
+    size_t bitmap_index = block_index / BLOCKS_PER_UINT64;
+    size_t bit_offset = block_index % BLOCKS_PER_UINT64;
+    pool.bitmap[bitmap_index] |= (1ULL << bit_offset);
+    
+    // 计算内存地址
+    void* ptr = static_cast<uint8_t*>(pool.base_ptr) + block_index * pool.block_size;
+    
+    hit_count_++;
+    return ptr;
+}
+
+// 释放内存到指定池
+void MemoryPool::deallocateFromPool(MemoryPoolBlock& pool, void* ptr) {
+    std::lock_guard<std::mutex> lock(pool_mutex_);
+    
+    // 计算块索引
+    auto block_index = (static_cast<uint8_t*>(ptr) - static_cast<uint8_t*>(pool.base_ptr)) / pool.block_size;
+    
+    // 验证有效性
+    if (block_index < 0 || block_index >= pool.block_count) {
+        return;  // 无效指针
+    }
+    
+    // 清除位图中对应的位
+    size_t bitmap_index = block_index / BLOCKS_PER_UINT64;
+    size_t bit_offset = block_index % BLOCKS_PER_UINT64;
+    pool.bitmap[bitmap_index] &= ~(1ULL << bit_offset);
+    
+    // 添加到空闲列表
+    pool.free_list.push_back(block_index);
+    pool.free_blocks++;
 }
 
 // ShardWriter实现
